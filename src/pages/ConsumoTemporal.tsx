@@ -5,7 +5,7 @@ import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
 import { brl, brlCompact, num, periodKey, periodLabel, type Granularity, lt } from '@/lib/utils';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 
@@ -108,14 +108,7 @@ export function ConsumoTemporal() {
                 stroke="#1e6091"
                 fill="url(#gradGasto)"
                 strokeWidth={2}
-              >
-                <LabelList
-                  dataKey="gasto"
-                  position="top"
-                  formatter={(v: number) => brlCompact(v)}
-                  style={{ fontSize: 10, fill: '#1e6091', fontWeight: 600 }}
-                />
-              </Area>
+              />
               <Area
                 yAxisId="right"
                 type="monotone"
@@ -124,14 +117,7 @@ export function ConsumoTemporal() {
                 stroke="#f59e0b"
                 fill="url(#gradLitros)"
                 strokeWidth={2}
-              >
-                <LabelList
-                  dataKey="litros"
-                  position="bottom"
-                  formatter={(v: number) => `${num(v, 0)}L`}
-                  style={{ fontSize: 10, fill: '#b45309', fontWeight: 600 }}
-                />
-              </Area>
+              />
             </AreaChart>
           </ResponsiveContainer>
         )}
