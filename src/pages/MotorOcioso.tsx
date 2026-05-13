@@ -361,14 +361,7 @@ export function MotorOcioso() {
                 stroke="#ef4444"
                 strokeWidth={2.5}
                 dot={{ r: 4, fill: '#ef4444' }}
-              >
-                <LabelList
-                  dataKey="horas"
-                  position="top"
-                  formatter={(v: number) => `${num(v, 0)}h`}
-                  style={{ fontSize: 10, fill: '#991b1b', fontWeight: 600 }}
-                />
-              </Line>
+              />
             </LineChart>
           </ResponsiveContainer>
         )}
