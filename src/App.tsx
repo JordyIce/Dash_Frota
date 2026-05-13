@@ -3,6 +3,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { GlobalFilters } from '@/components/GlobalFilters';
 import { DataProvider, useData } from '@/contexts/DataContext';
 import { FiltersProvider } from '@/contexts/FiltersContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Loading, ErrorState } from '@/components/UI';
 
 import { Orcamento } from '@/pages/Orcamento';
@@ -56,11 +57,13 @@ function Shell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <DataProvider>
-        <FiltersProvider>
-          <Shell />
-        </FiltersProvider>
-      </DataProvider>
+      <ThemeProvider>
+        <DataProvider>
+          <FiltersProvider>
+            <Shell />
+          </FiltersProvider>
+        </DataProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }
