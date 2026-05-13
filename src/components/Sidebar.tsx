@@ -10,6 +10,7 @@ import {
   Tag,
   Truck,
 } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 
 const links = [
   { to: '/orcamento', label: 'Orçamento', icon: Wallet, hint: 'Gasto de combustível' },
@@ -58,8 +59,9 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-4 py-3 border-t border-white/5 text-[11px] text-slate-500">
-        v0.1 · Planejamento B&Q
+      <div className="px-4 py-3 border-t border-white/5 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-slate-500">v0.1 · Planejamento B&Q</span>
+        <ThemeToggle />
       </div>
     </aside>
   );
