@@ -5,7 +5,7 @@ import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
 import { brl, brlCompact, num, lt, kmL } from '@/lib/utils';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
 } from 'recharts';
 import { Card, EmptyState, PageHeader, Badge } from '@/components/UI';
 
@@ -86,7 +86,14 @@ export function Consumo() {
                   formatter={(v: number, name: string) => [num(v, 1) + ' L', name]}
                   contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e2e8f0' }}
                 />
-                <Bar dataKey="litros" name="Volume" fill="#1e6091" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="litros" name="Volume" fill="#1e6091" radius={[0, 6, 6, 0]}>
+                  <LabelList
+                    dataKey="litros"
+                    position="right"
+                    formatter={(v: number) => `${num(v, 0)} L`}
+                    style={{ fontSize: 10, fill: '#475569', fontWeight: 600 }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
 

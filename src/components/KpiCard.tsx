@@ -24,7 +24,7 @@ export function KpiCard({ label, value, hint, icon: Icon, tone = 'default', delt
           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             {label}
           </div>
-          <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums truncate">
+          <div className="text-xl font-bold text-slate-900 mt-1 tabular-nums truncate">
             {value}
           </div>
           {hint && <div className="text-xs text-slate-500 mt-0.5 truncate">{hint}</div>}

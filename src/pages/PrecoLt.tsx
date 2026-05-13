@@ -5,7 +5,7 @@ import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
 import { brl, num, lt } from '@/lib/utils';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 import { KpiCard } from '@/components/KpiCard';
@@ -176,6 +176,12 @@ export function PrecoLt() {
                 {porOperacao.map((r, i) => (
                   <Cell key={i} fill={barColor(r.precoMedio)} />
                 ))}
+                <LabelList
+                  dataKey="precoMedio"
+                  position="right"
+                  formatter={(v: number) => brl(v)}
+                  style={{ fontSize: 10, fill: '#475569', fontWeight: 600 }}
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

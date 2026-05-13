@@ -6,7 +6,7 @@ import { onlyCombustivel } from '@/lib/data';
 import { brl, brlCompact, lt, num, fmtDate } from '@/lib/utils';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell, Legend, LabelList,
 } from 'recharts';
 import { Wallet, Fuel, Coins, TrendingDown } from 'lucide-react';
 import { KpiCard } from '@/components/KpiCard';
@@ -127,7 +127,14 @@ export function Orcamento() {
                   formatter={(v: number) => brl(v)}
                   contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e2e8f0' }}
                 />
-                <Bar dataKey="gasto" fill="#1e6091" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="gasto" fill="#1e6091" radius={[0, 6, 6, 0]}>
+                  <LabelList
+                    dataKey="gasto"
+                    position="right"
+                    formatter={(v: number) => brlCompact(v)}
+                    style={{ fontSize: 10, fill: '#475569', fontWeight: 600 }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -146,6 +153,10 @@ export function Orcamento() {
                   outerRadius={90}
                   innerRadius={50}
                   paddingAngle={2}
+                  label={({ percent }) =>
+                    percent && percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ''
+                  }
+                  labelLine={false}
                 >
                   {porTipo.map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />

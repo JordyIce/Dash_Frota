@@ -5,7 +5,7 @@ import { applyFiltersOcioso } from '@/lib/filters';
 import { num, periodKey, periodLabel, fmtDate } from '@/lib/utils';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, ReferenceLine, Cell,
+  LineChart, Line, ReferenceLine, Cell, LabelList,
 } from 'recharts';
 import { Card, EmptyState, PageHeader, Badge } from '@/components/UI';
 import { KpiCard } from '@/components/KpiCard';
@@ -239,6 +239,12 @@ export function MotorOcioso() {
                 {ranking.map((r, i) => (
                   <Cell key={i} fill={barColor(r.ocioso, maxRanking)} />
                 ))}
+                <LabelList
+                  dataKey="ocioso"
+                  position="right"
+                  formatter={(v: number) => `${num(v, 1)}h`}
+                  style={{ fontSize: 10, fill: '#475569', fontWeight: 600 }}
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -355,7 +361,14 @@ export function MotorOcioso() {
                 stroke="#ef4444"
                 strokeWidth={2.5}
                 dot={{ r: 4, fill: '#ef4444' }}
-              />
+              >
+                <LabelList
+                  dataKey="horas"
+                  position="top"
+                  formatter={(v: number) => `${num(v, 0)}h`}
+                  style={{ fontSize: 10, fill: '#991b1b', fontWeight: 600 }}
+                />
+              </Line>
             </LineChart>
           </ResponsiveContainer>
         )}
