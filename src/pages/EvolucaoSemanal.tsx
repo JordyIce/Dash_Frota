@@ -5,7 +5,7 @@ import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
 import { brl, brlCompact, num, lt, kmL as fmtKmL, periodKey, periodLabel } from '@/lib/utils';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine, LabelList,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 import { KpiCard } from '@/components/KpiCard';
@@ -148,22 +148,8 @@ export function EvolucaoSemanal() {
                 contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e2e8f0' }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line yAxisId="left" type="monotone" dataKey="gasto" name="Gasto" stroke="#1e6091" strokeWidth={2.5} dot={{ r: 3 }}>
-                <LabelList
-                  dataKey="gasto"
-                  position="top"
-                  formatter={(v: number) => brlCompact(v)}
-                  style={{ fontSize: 10, fill: '#1e6091', fontWeight: 600 }}
-                />
-              </Line>
-              <Line yAxisId="right" type="monotone" dataKey="litros" name="Volume" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3 }}>
-                <LabelList
-                  dataKey="litros"
-                  position="bottom"
-                  formatter={(v: number) => `${num(v, 0)}L`}
-                  style={{ fontSize: 10, fill: '#b45309', fontWeight: 600 }}
-                />
-              </Line>
+              <Line yAxisId="left" type="monotone" dataKey="gasto" name="Gasto" stroke="#1e6091" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line yAxisId="right" type="monotone" dataKey="litros" name="Volume" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -190,14 +176,7 @@ export function EvolucaoSemanal() {
                   label={{ value: `Média ${fmtKmL(mediaKmL)}`, position: 'right', fontSize: 11, fill: '#64748b' }}
                 />
               )}
-              <Line type="monotone" dataKey="kmL" name="KM/L" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }}>
-                <LabelList
-                  dataKey="kmL"
-                  position="top"
-                  formatter={(v: number) => num(v, 2)}
-                  style={{ fontSize: 10, fill: '#065f46', fontWeight: 600 }}
-                />
-              </Line>
+              <Line type="monotone" dataKey="kmL" name="KM/L" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
