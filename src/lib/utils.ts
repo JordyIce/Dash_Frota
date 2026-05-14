@@ -33,7 +33,24 @@ export function parseNumber(v: string | number | null | undefined): number {
   return isFinite(n) ? n : 0;
 }
 
-/** Parse data aceitando "12/3/25 9:37", "12/5/2025", "2025-12-03 09:37". Retorna null se inválido. */
+/**
+ * Parse data.
+ *
+ * IMPORTANTE: o Google Sheets quando exportado via `/export?format=csv` muitas vezes
+ * serializa datas no formato AMERICANO `M/D/YY` ou `M/D/YYYY` mesmo quando a célula
+ * é exibida como DD/MM/YYYY na interface. Isso depende da locale do contrato Google.
+ * Confirmado para o B&Q: célula mostra "5/10/26 11:04" mas a barra de fórmulas
+ * mostra "5/10/2026 11:04:44" — ou seja, mês = 5 (maio), dia = 10.
+ *
+ * Estratégia: quando vier no formato `N/N/N[ HH:MM[:SS]]`:
+ *   - Se primeiro número > 12 → tem que ser DD/MM (americano não pode ter dia > 12 no mês)
+ *   - Se segundo número > 12 → tem que ser MM/DD (americano)
+ *   - Se ambos <= 12 (ambíguo) → DEFAULT MM/DD/YYYY (Sheets export)
+ *
+ * Também aceita ISO `YYYY-MM-DD ...` sem ambiguidade.
+ *
+ * Retorna null se inválido.
+ */
 export function parseDate(v: string | null | undefined): Date | null {
   if (!v) return null;
   const s = String(v).trim();
@@ -45,18 +62,36 @@ export function parseDate(v: string | null | undefined): Date | null {
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // DD/MM/YY ou DD/MM/YYYY com hora opcional
-  // Ex: "12/3/25 9:37" → dia 12, mês 3, ano 2025
-  // Ex: "12/5/2025" → dia 12, mês 5, ano 2025
+  // N/N/N com hora opcional
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m) {
-    const day = parseInt(m[1], 10);
-    const month = parseInt(m[2], 10) - 1;
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
     let year = parseInt(m[3], 10);
     if (year < 100) year += 2000;
     const hour = m[4] ? parseInt(m[4], 10) : 0;
     const min = m[5] ? parseInt(m[5], 10) : 0;
     const sec = m[6] ? parseInt(m[6], 10) : 0;
+
+    let day: number;
+    let month: number;
+    if (a > 12 && b <= 12) {
+      // primeiro número é dia (DD/MM/YYYY)
+      day = a;
+      month = b - 1;
+    } else if (b > 12 && a <= 12) {
+      // segundo número é dia (MM/DD/YYYY)
+      month = a - 1;
+      day = b;
+    } else if (a > 12 && b > 12) {
+      // impossível em qualquer formato
+      return null;
+    } else {
+      // ambos <= 12: ambíguo. DEFAULT MM/DD/YYYY (Google Sheets CSV export)
+      month = a - 1;
+      day = b;
+    }
+
     const d = new Date(year, month, day, hour, min, sec);
     return isNaN(d.getTime()) ? null : d;
   }
@@ -158,12 +193,29 @@ export function periodKey(d: Date, g: Granularity): string {
   if (g === 'day') return `${yyyy}-${mm}-${dd}`;
   if (g === 'month') return `${yyyy}-${mm}`;
   if (g === 'year') return `${yyyy}`;
-  // week — ISO-ish, baseado em segunda-feira
-  const sow = startOfWeek(d);
-  const wYear = sow.getFullYear();
-  const oneJan = new Date(wYear, 0, 1);
-  const week = Math.ceil(((sow.getTime() - oneJan.getTime()) / 86400000 + oneJan.getDay() + 1) / 7);
-  return `${wYear}-W${String(week).padStart(2, '0')}`;
+  // week — ISO 8601 (semana começa na segunda; semana 1 é a que contém a 1ª quinta-feira do ano)
+  const { isoYear, isoWeek } = isoWeekOf(d);
+  return `${isoYear}-W${String(isoWeek).padStart(2, '0')}`;
+}
+
+/**
+ * Cálculo ISO 8601 de número de semana e ano-semana.
+ * Detalhes do algoritmo:
+ *   1. Move a data pra quinta-feira da mesma semana (ISO usa quinta como "ancora")
+ *   2. O ano-semana é o ano dessa quinta-feira (resolve casos onde semana cruza ano)
+ *   3. Semana = ceil(((quinta - 1ºJan do ano-semana) / 7 dias) + 1)
+ * Garante 1-53 (nunca 0 nem 54+).
+ */
+function isoWeekOf(date: Date): { isoYear: number; isoWeek: number } {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  // ISO: dia da semana 1=segunda ... 7=domingo
+  const dayNum = d.getUTCDay() || 7;
+  // pula pra quinta-feira dessa semana ISO
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const isoWeek = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { isoYear, isoWeek };
 }
 
 /** Label legível pra um periodKey */
