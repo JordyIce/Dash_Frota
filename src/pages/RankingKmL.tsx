@@ -3,11 +3,11 @@ import { useData } from '@/contexts/DataContext';
 import { useFilters } from '@/contexts/FiltersContext';
 import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
-import { kmL, lt, brlCompact, num } from '@/lib/utils';
+import { kmL, lt, brlCompact } from '@/lib/utils';
 import { Card, EmptyState, PageHeader, Badge } from '@/components/UI';
 import { ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
 
-type GroupBy = 'cc' | 'placa' | 'motorista';
+type GroupBy = 'gerente' | 'placa' | 'motorista';
 
 interface Linha {
   key: string;
@@ -16,7 +16,7 @@ interface Linha {
   litros: number;
   kmL: number;
   metaKmL: number;
-  aderencia: number; // kmL / metaKmL
+  aderencia: number;
   transacoes: number;
   gasto: number;
 }
@@ -24,7 +24,7 @@ interface Linha {
 export function RankingKmL() {
   const { data } = useData();
   const { filters } = useFilters();
-  const [groupBy, setGroupBy] = useState<GroupBy>('cc');
+  const [groupBy, setGroupBy] = useState<GroupBy>('gerente');
   const [topN, setTopN] = useState(10);
 
   const filtered = useMemo(() => applyFilters(data, filters), [data, filters]);
@@ -36,17 +36,17 @@ export function RankingKmL() {
       let key = '';
       let label = '';
       let detail = '';
-      if (groupBy === 'cc') {
-        key = t.descricaoCC || 'Sem CC';
+      if (groupBy === 'gerente') {
+        key = t.gerente || 'Sem gerente';
         label = key;
       } else if (groupBy === 'placa') {
         key = t.placa || 'sem-placa';
         label = t.placa || '—';
-        detail = `${t.modelo || ''} · ${t.descricaoCC || ''}`;
+        detail = `${t.modelo || ''} · ${t.gerente || t.descricaoCC || ''}`;
       } else {
         key = t.motorista || 'sem-motorista';
         label = t.motorista || '—';
-        detail = t.descricaoCC || '';
+        detail = t.gerente || t.descricaoCC || '';
       }
 
       const e =
@@ -70,7 +70,6 @@ export function RankingKmL() {
       if (t.rendimentoMedio > 0 && t.qtdMercadoria > 0) e.metaKmL += t.rendimentoMedio * t.qtdMercadoria;
       map.set(key, e);
     }
-    // ponderação final
     return Array.from(map.values())
       .map((r) => {
         const kmL = r.litros > 0 ? r.kmL / r.litros : 0;
@@ -82,7 +81,6 @@ export function RankingKmL() {
           aderencia: meta > 0 ? kmL / meta : 0,
         };
       })
-      // só vale ranquear quem teve dados de KM/L válidos (filtra ruído)
       .filter((r) => r.kmL > 0 && r.transacoes >= 2);
   }, [combustivel, groupBy]);
 
@@ -103,7 +101,7 @@ export function RankingKmL() {
         actions={
           <div className="flex items-center gap-2">
             <div className="flex bg-white border border-slate-200 rounded-lg p-0.5">
-              {(['cc', 'placa', 'motorista'] as const).map((g) => (
+              {(['gerente', 'placa', 'motorista'] as const).map((g) => (
                 <button
                   key={g}
                   onClick={() => setGroupBy(g)}
@@ -113,7 +111,7 @@ export function RankingKmL() {
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  {g === 'cc' ? 'Gerência' : g === 'placa' ? 'Placa' : 'Motorista'}
+                  {g === 'gerente' ? 'Gerência' : g === 'placa' ? 'Placa' : 'Motorista'}
                 </button>
               ))}
             </div>
