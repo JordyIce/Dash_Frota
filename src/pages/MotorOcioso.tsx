@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import { Card, EmptyState, PageHeader, Badge } from '@/components/UI';
 import { KpiCard } from '@/components/KpiCard';
-import { Gauge, Clock, Activity, AlertTriangle } from 'lucide-react';
+import { Gauge, Clock, Activity } from 'lucide-react';
 
 type GroupBy = 'gerente' | 'operacao' | 'grupo';
 
@@ -24,11 +24,10 @@ export function MotorOcioso() {
   const stats = useMemo(() => {
     const totalHoras = filtered.reduce((s, o) => s + o.motorOciosoHoras, 0);
     const totalLigado = filtered.reduce((s, o) => s + o.ligadoMin, 0) / 60;
-    const totalDistancia = filtered.reduce((s, o) => s + o.distanciaKm, 0);
     const dias = filtered.length;
     const mediaPorDia = dias > 0 ? totalHoras / dias : 0;
     const pctOcioso = totalLigado > 0 ? (totalHoras / totalLigado) * 100 : 0;
-    return { totalHoras, totalLigado, totalDistancia, dias, mediaPorDia, pctOcioso };
+    return { totalHoras, totalLigado, dias, mediaPorDia, pctOcioso };
   }, [filtered]);
 
   // Ranking por grouping
@@ -70,7 +69,7 @@ export function MotorOcioso() {
       .sort((a, b) => b.ocioso - a.ocioso);
   }, [filtered, groupBy]);
 
-  // Piores placas (sempre, independente do groupBy)
+  // Piores placas
   const pioresPlacas = useMemo(() => {
     interface P {
       placa: string;
@@ -142,7 +141,6 @@ export function MotorOcioso() {
     return { min, max };
   }, [filtered]);
 
-  // cor da barra: gradient verde→vermelho
   function barColor(h: number, max: number) {
     if (max === 0) return '#1e6091';
     const t = Math.min(h / max, 1);
@@ -174,7 +172,7 @@ export function MotorOcioso() {
         subtitle={`Telemetria · ${fmtDate(periodo.min)} → ${fmtDate(periodo.max)}`}
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
         <KpiCard
           label="Total motor ocioso"
           value={`${num(stats.totalHoras, 1)} h`}
@@ -195,13 +193,6 @@ export function MotorOcioso() {
           hint="Por veículo, por dia"
           icon={Activity}
           tone="warn"
-        />
-        <KpiCard
-          label="Distância total"
-          value={`${num(stats.totalDistancia, 0)} km`}
-          hint="Soma do período"
-          icon={AlertTriangle}
-          tone="default"
         />
       </div>
 
