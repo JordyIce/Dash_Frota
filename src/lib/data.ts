@@ -5,8 +5,8 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 /**
  * Tudo numa planilha só: "Painel Aderência - KPI Combustivel".
  * Abas usadas:
- *   - Base veloe (gid=101845243)  → transações Veloe + gerente já mapeado
- *   - Base ZUQ   (gid=1442572254) → telemetria diária (motor ocioso)
+ *   - Base veloe (gid=101845243)  → transações Veloe
+ *   - Base ZUQ   (gid=1442572254) → telemetria diária + fonte canônica de Gerente e Tipo de Carro
  */
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
 const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
@@ -23,7 +23,6 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   if (!res.ok) throw new Error(`Falha na Base veloe: HTTP ${res.status}`);
   const text = await res.text();
   const rows = parseCsv(text);
-  // Linha 1 da Base veloe tem totalizadores/junk, header está na linha 2
   const raw = csvToObjects<VeloeRow>(rows, { skipRows: 1 });
   return raw.map(normalizeVeloeRow).filter((t) => t.placa);
 }
@@ -41,14 +40,18 @@ export async function fetchOciosoData(): Promise<OciosoDia[]> {
 
 /**
  * Fetch das duas abas em paralelo.
- * O gerente vem direto da Base veloe; se ZUQ falhar, Veloe continua funcionando.
+ * Gerente e Tipo do Carro vêm da Base ZUQ (telemetria) via lookup placa→gerente / placa→grupo.
+ * A Base ZUQ é a fonte mais confiável pois tem 1 linha por placa por dia sempre populada,
+ * com nomes consistentes (Harlei, Alex, Amanda, Mardes, Nilton LPT, etc).
+ * Fallback: se a placa não estiver na ZUQ, usa o que veio na Veloe.
  */
 export async function fetchAll(): Promise<{
   veloe: Transacao[];
   ocioso: OciosoDia[];
   placasGerente: Map<string, string>;
+  placasGrupo: Map<string, string>;
 }> {
-  const [veloe, ociosoResult] = await Promise.all([
+  const [veloeRaw, ociosoResult] = await Promise.all([
     fetchVeloeData(),
     fetchOciosoData().catch((e) => {
       console.warn('Base ZUQ indisponível:', e);
@@ -56,16 +59,46 @@ export async function fetchAll(): Promise<{
     }),
   ]);
 
+  // Monta lookups placa→gerente e placa→grupo a partir da ZUQ.
+  // Pra cada placa, usa o registro com a data MAIS RECENTE (caso a placa tenha mudado de
+  // gerente/grupo ao longo do tempo, queremos o estado atual).
   const placasGerente = new Map<string, string>();
-  for (const t of veloe) {
-    if (t.placa && t.gerente && !placasGerente.has(t.placa.toUpperCase())) {
-      placasGerente.set(t.placa.toUpperCase(), t.gerente);
+  const placasGrupo = new Map<string, string>();
+  const ultimaDataPorPlaca = new Map<string, number>();
+
+  for (const o of ociosoResult) {
+    if (!o.placa || !o.gerente) continue;
+    const placaUC = o.placa.toUpperCase();
+    const ts = o.data ? o.data.getTime() : 0;
+    const tsAtual = ultimaDataPorPlaca.get(placaUC) ?? -1;
+    if (ts >= tsAtual) {
+      ultimaDataPorPlaca.set(placaUC, ts);
+      placasGerente.set(placaUC, o.gerente);
+      if (o.grupo) placasGrupo.set(placaUC, o.grupo);
     }
   }
 
-  return { veloe, ocioso: ociosoResult, placasGerente };
+  // Aplica os lookups nas transações Veloe.
+  // Se a placa tem entrada na ZUQ → usa ZUQ.
+  // Se não → mantém o que veio da Veloe (já populado em normalizeVeloeRow).
+  const veloe = veloeRaw.map((t) => {
+    const placaUC = (t.placa || '').toUpperCase();
+    const gerenteZuq = placasGerente.get(placaUC);
+    const grupoZuq = placasGrupo.get(placaUC);
+    return {
+      ...t,
+      gerente: gerenteZuq || t.gerente,
+      categoriaVeiculo: grupoZuq || t.categoriaVeiculo,
+    };
+  });
+
+  return { veloe, ocioso: ociosoResult, placasGerente, placasGrupo };
 }
 
+/**
+ * Normaliza uma linha da Base veloe (Painel Aderência).
+ * Os campos gerente e categoriaVeiculo aqui podem ser sobrescritos pelo lookup ZUQ no fetchAll.
+ */
 function normalizeVeloeRow(r: VeloeRow): Transacao {
   // Combina data + hora em uma string única pro parseDate
   const dataStr = r['Data/ Hora'] || '';
