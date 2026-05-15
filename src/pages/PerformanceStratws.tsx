@@ -1,15 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useFilters } from '@/contexts/FiltersContext';
 import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
 import { brl, num, unique } from '@/lib/utils';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
+import { activeFilterCount } from '@/lib/filters';
 import type { Transacao } from '@/lib/types';
 
 /**
- * Performance Stratws - tabelas pivot (Tipo × Mês) com comparativo
- * Geral × Gerente selecionado.
+ * Performance Stratws - tabelas pivot (Tipo × Mês) lado a lado.
+ *   - Esquerda "Geral": IGNORA todos os filtros — mostra a base inteira como baseline fixo
+ *   - Direita: respeita TODOS os filtros (data, gerente, tipo carro, combustível)
  * 5 blocos: KM rodado, Consumo (KM/L), Volume (L), R$, R$/KM.
  */
 
@@ -18,7 +20,6 @@ const MESES_NOMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
 
-/** Retorna chave "YYYY-MM" do mês da transação */
 function mesKey(t: Transacao): string {
   if (!t.dataTransacao) return '';
   return `${t.dataTransacao.getFullYear()}-${String(t.dataTransacao.getMonth() + 1).padStart(2, '0')}`;
@@ -29,7 +30,6 @@ function mesLabel(key: string): string {
   return MESES_NOMES[parseInt(m, 10) - 1] || key;
 }
 
-// === Tipos de agregação ===
 interface Aggregator {
   add(t: Transacao): void;
   value(): number;
@@ -45,7 +45,6 @@ function sumValor(field: 'valorTotal' | 'qtdMercadoria'): () => Aggregator {
   };
 }
 
-/** KM rodado = soma de Km/Hr Percorrido (mesmo cálculo da planilha) */
 function sumKm(): Aggregator {
   let s = 0;
   return {
@@ -54,7 +53,6 @@ function sumKm(): Aggregator {
   };
 }
 
-/** KM/L médio ponderado pelos litros */
 function kmlPond(): Aggregator {
   let num = 0;
   let den = 0;
@@ -69,7 +67,6 @@ function kmlPond(): Aggregator {
   };
 }
 
-/** R$/KM = Gasto total / KM rodado total */
 function reaisPorKm(): Aggregator {
   let gasto = 0;
   let km = 0;
@@ -218,69 +215,65 @@ function PivotTable({
   return (
     <div className="flex-1 min-w-0">
       <div className="text-xs font-semibold text-slate-700 mb-2 px-1">{titulo}</div>
-      <div className="overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="w-full text-xs tabular-nums">
-          <thead>
-            <tr className="bg-slate-100 text-slate-600">
-              <th className="text-left px-3 py-2 font-semibold min-w-[140px] sticky left-0 bg-slate-100">
-                Tipo
+      <table className="w-full text-[11px] tabular-nums table-fixed">
+        <thead>
+          <tr className="bg-slate-100 text-slate-700">
+            <th className="text-left px-2 py-1.5 font-semibold w-[130px]">Tipo</th>
+            {pivot.meses.map((m) => (
+              <th key={m} className="text-right px-2 py-1.5 font-semibold">
+                <div>{mesLabel(m)}</div>
+                <div className="text-[9px] font-normal text-slate-400">{bloco.unidade}</div>
               </th>
-              {pivot.meses.map((m) => (
-                <th key={m} className="text-right px-3 py-2 font-semibold whitespace-nowrap">
-                  <div>{mesLabel(m)}</div>
-                  <div className="text-[10px] font-normal text-slate-400">{bloco.unidade}</div>
-                </th>
-              ))}
-              <th className="text-right px-3 py-2 font-semibold bg-slate-200/70 whitespace-nowrap">
-                Gap
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {tiposOrdenados.map((tipo) => {
-              const gap = calcGap(pivot.cells, tipo, pivot.meses);
-              return (
-                <tr key={tipo} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="text-left px-3 py-1.5 font-medium text-slate-800 sticky left-0 bg-white hover:bg-slate-50">
-                    {tipo}
-                  </td>
-                  {pivot.meses.map((m) => {
-                    const v = pivot.cells.get(`${tipo}|${m}`) || 0;
-                    const display = bloco.emptyOnZero && v === 0 ? '—' : bloco.format(v);
-                    return (
-                      <td key={m} className="text-right px-3 py-1.5 text-slate-700">
-                        {display}
-                      </td>
-                    );
-                  })}
-                  <td className={[
-                    'text-right px-3 py-1.5 font-semibold bg-slate-50',
-                    gap > 0 ? 'text-emerald-700' : gap < 0 ? 'text-red-600' : 'text-slate-500',
-                  ].join(' ')}>
-                    {gap === 0 ? '—' : bloco.format(gap)}
-                  </td>
-                </tr>
-              );
-            })}
-            <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
-              <td className="text-left px-3 py-2 sticky left-0 bg-slate-100">Total</td>
-              {pivot.meses.map((m) => (
-                <td key={m} className="text-right px-3 py-2">
-                  {bloco.format(pivot.totaisPorMes.get(m) || 0)}
+            ))}
+            <th className="text-right px-2 py-1.5 font-semibold bg-amber-100 text-amber-900 w-[80px]">
+              Gap
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {tiposOrdenados.map((tipo) => {
+            const gap = calcGap(pivot.cells, tipo, pivot.meses);
+            return (
+              <tr key={tipo} className="border-t border-slate-100 hover:bg-slate-50">
+                <td className="text-left px-2 py-1 font-medium text-slate-800 truncate" title={tipo}>
+                  {tipo}
                 </td>
-              ))}
-              <td className="text-right px-3 py-2 bg-slate-200/70">
-                {(() => {
-                  const t0 = pivot.totaisPorMes.get(pivot.meses[0]) || 0;
-                  const tN = pivot.totaisPorMes.get(pivot.meses[pivot.meses.length - 1]) || 0;
-                  const gap = tN - t0;
-                  return gap === 0 ? '—' : bloco.format(gap);
-                })()}
+                {pivot.meses.map((m) => {
+                  const v = pivot.cells.get(`${tipo}|${m}`) || 0;
+                  const display = bloco.emptyOnZero && v === 0 ? '—' : bloco.format(v);
+                  return (
+                    <td key={m} className="text-right px-2 py-1 text-slate-700">
+                      {display}
+                    </td>
+                  );
+                })}
+                <td className={[
+                  'text-right px-2 py-1 font-semibold bg-amber-50',
+                  gap > 0 ? 'text-emerald-700' : gap < 0 ? 'text-red-700' : 'text-amber-900',
+                ].join(' ')}>
+                  {gap === 0 ? '—' : bloco.format(gap)}
+                </td>
+              </tr>
+            );
+          })}
+          <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+            <td className="text-left px-2 py-1.5">Total</td>
+            {pivot.meses.map((m) => (
+              <td key={m} className="text-right px-2 py-1.5">
+                {bloco.format(pivot.totaisPorMes.get(m) || 0)}
               </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+            ))}
+            <td className="text-right px-2 py-1.5 bg-amber-100 text-amber-900">
+              {(() => {
+                const t0 = pivot.totaisPorMes.get(pivot.meses[0]) || 0;
+                const tN = pivot.totaisPorMes.get(pivot.meses[pivot.meses.length - 1]) || 0;
+                const gap = tN - t0;
+                return gap === 0 ? '—' : bloco.format(gap);
+              })()}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -289,34 +282,25 @@ export function PerformanceStratws() {
   const { data } = useData();
   const { filters } = useFilters();
 
-  const filtered = useMemo(() => applyFilters(data, filters), [data, filters]);
-  const combustivel = useMemo(() => onlyCombustivel(filtered), [filtered]);
+  // Esquerda: TUDO, sem filtros — baseline fixo
+  const baseGeral = useMemo(() => onlyCombustivel(data), [data]);
 
-  const gerentesOrdenados = useMemo(() => {
-    const gastoPorGerente = new Map<string, number>();
-    for (const t of combustivel) {
-      const g = t.gerente || 'Sem Gerente';
-      gastoPorGerente.set(g, (gastoPorGerente.get(g) || 0) + (t.valorTotal || 0));
-    }
-    return Array.from(gastoPorGerente.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([g]) => g);
-  }, [combustivel]);
+  // Direita: aplica todos os filtros
+  const baseFiltrada = useMemo(() => {
+    return onlyCombustivel(applyFilters(data, filters));
+  }, [data, filters]);
 
-  const [gerenteSelecionado, setGerenteSelecionado] = useState<string>('');
-  const gerenteAtual = gerenteSelecionado || gerentesOrdenados[0] || '';
+  const nFiltros = activeFilterCount(filters);
+  const tituloDireita = nFiltros === 0
+    ? 'Filtrado (sem filtros aplicados)'
+    : `Filtrado (${nFiltros} ${nFiltros === 1 ? 'filtro' : 'filtros'} ativos)`;
 
-  const dadosGerente = useMemo(() => {
-    if (!gerenteAtual) return [] as Transacao[];
-    return combustivel.filter((t) => (t.gerente || 'Sem Gerente') === gerenteAtual);
-  }, [combustivel, gerenteAtual]);
-
-  if (combustivel.length === 0) {
+  if (baseGeral.length === 0) {
     return (
       <div>
         <PageHeader
           title="Performance Stratws"
-          subtitle="Comparativo Geral × Gerência por tipo de veículo e mês"
+          subtitle="Comparativo Geral × Filtrado por tipo de veículo e mês"
         />
         <Card title="Sem dados">
           <EmptyState />
@@ -329,36 +313,18 @@ export function PerformanceStratws() {
     <div>
       <PageHeader
         title="Performance Stratws"
-        subtitle="Comparativo Geral × Gerência por tipo de veículo e mês · Gap = último mês − primeiro mês"
-        actions={
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-500">Comparar com:</label>
-            <select
-              value={gerenteAtual}
-              onChange={(e) => setGerenteSelecionado(e.target.value)}
-              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm hover:border-beq-blue/40 focus:outline-none focus:ring-2 focus:ring-beq-blue/30"
-            >
-              {gerentesOrdenados.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
-        }
+        subtitle="Geral (tudo) × Filtrado · Os filtros do topo afetam só a tabela da direita · Gap = último mês − primeiro mês"
       />
 
       <div className="space-y-5">
         {BLOCOS.map((bloco) => {
-          const pivotGeral = calcPivot(combustivel, bloco);
-          const pivotGerente = calcPivot(dadosGerente, bloco);
+          const pivotGeral = calcPivot(baseGeral, bloco);
+          const pivotFiltrada = calcPivot(baseFiltrada, bloco);
           return (
             <Card key={bloco.id} title={bloco.titulo}>
-              <div className="flex flex-col lg:flex-row gap-5">
-                <PivotTable titulo="Geral" pivot={pivotGeral} bloco={bloco} />
-                <PivotTable
-                  titulo={gerenteAtual || 'Selecione um gerente'}
-                  pivot={pivotGerente}
-                  bloco={bloco}
-                />
+              <div className="flex flex-col xl:flex-row gap-5">
+                <PivotTable titulo="Geral (todos os dados)" pivot={pivotGeral} bloco={bloco} />
+                <PivotTable titulo={tituloDireita} pivot={pivotFiltrada} bloco={bloco} />
               </div>
             </Card>
           );
