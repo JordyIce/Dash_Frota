@@ -3,7 +3,7 @@ import { useData } from '@/contexts/DataContext';
 import { useFilters } from '@/contexts/FiltersContext';
 import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
-import { brl, num, unique } from '@/lib/utils';
+import { brlCompact, num, unique } from '@/lib/utils';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 import { activeFilterCount } from '@/lib/filters';
 import type { Transacao } from '@/lib/types';
@@ -116,7 +116,7 @@ const BLOCOS: BlocoConfig[] = [
     titulo: 'Gasto (R$)',
     unidade: 'R$',
     agg: sumValor('valorTotal'),
-    format: (v) => brl(v),
+    format: (v) => brlCompact(v),
   },
   {
     id: 'rkm',
@@ -242,13 +242,13 @@ function PivotTable({
                   const v = pivot.cells.get(`${tipo}|${m}`) || 0;
                   const display = bloco.emptyOnZero && v === 0 ? '—' : bloco.format(v);
                   return (
-                    <td key={m} className="text-right px-2 py-1 text-slate-700">
+                    <td key={m} className="text-right px-2 py-1 text-slate-700 whitespace-nowrap overflow-hidden text-ellipsis">
                       {display}
                     </td>
                   );
                 })}
                 <td className={[
-                  'text-right px-2 py-1 font-semibold bg-amber-50',
+                  'text-right px-2 py-1 font-semibold bg-amber-50 whitespace-nowrap overflow-hidden text-ellipsis',
                   gap > 0 ? 'text-emerald-700' : gap < 0 ? 'text-red-700' : 'text-amber-900',
                 ].join(' ')}>
                   {gap === 0 ? '—' : bloco.format(gap)}
@@ -259,11 +259,11 @@ function PivotTable({
           <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
             <td className="text-left px-2 py-1.5">Total</td>
             {pivot.meses.map((m) => (
-              <td key={m} className="text-right px-2 py-1.5">
+              <td key={m} className="text-right px-2 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
                 {bloco.format(pivot.totaisPorMes.get(m) || 0)}
               </td>
             ))}
-            <td className="text-right px-2 py-1.5 bg-amber-100 text-amber-900">
+            <td className="text-right px-2 py-1.5 bg-amber-100 text-amber-900 whitespace-nowrap overflow-hidden text-ellipsis">
               {(() => {
                 const t0 = pivot.totaisPorMes.get(pivot.meses[0]) || 0;
                 const tN = pivot.totaisPorMes.get(pivot.meses[pivot.meses.length - 1]) || 0;
