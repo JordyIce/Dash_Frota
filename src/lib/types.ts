@@ -168,4 +168,41 @@ export interface OciosoRow {
   'Ligado(min)': string;
   'Desligado(min)': string;
   'Parado(min)': string;
-  'Parado com
+  'Parado com a Ignição Ligada(min)': string;
+  Primeira: string;
+  Última: string;
+  'Sem comunicação(min)': string;
+  'Velocidade Máxima(km/h)': string;
+  'Velocidade Média(km/h)': string;
+  'Na base(min)': string;
+  'Fora da base(min)': string;
+  'Odômetro Inicial(km)': string;
+  'Odômetro Final(km)': string;
+  'Horímetro Inicial(Hrs)': string;
+  'Horímetro Final(Hrs)': string;
+  'Motor ocioso': string;
+  Semana: string;
+  Mês: string;
+  Gerente: string;
+  Grupo: string;
+  Operação: string;
+  [key: string]: string;
+}
+
+/** Linha normalizada de Motor Ocioso (uma por placa/dia). */
+export interface OciosoDia {
+  data: Date | null;
+  placa: string;
+  distanciaKm: number;
+  ligadoMin: number;
+  paradoIgnicaoMin: number;
+  motorOciosoHoras: number;
+  velocidadeMaxima: number;
+  velocidadeMedia: number;
+  semana: string;
+  mes: string;
+  gerente: string;
+  grupo: string;
+  operacao: string;
+  raw: OciosoRow;
+}
