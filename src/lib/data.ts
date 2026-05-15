@@ -2,43 +2,48 @@ import { parseCsv, csvToObjects } from './csv';
 import { parseDate, parseNumber } from './utils';
 import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 
-const SHEET_ID_VELOE = import.meta.env.VITE_SHEET_ID || '17oX46NDGybC2UEXAFg0__cqDEJ61eLjg0DcfxURshP8';
-const GID_VELOE = import.meta.env.VITE_GID_VELOE || '1773027822';
-
-const SHEET_ID_OCIOSO = import.meta.env.VITE_SHEET_ID_OCIOSO || '1ACx9uDKLA-wB9g0FwINTTQ3ndMpn9DRJUpGS1s7dhi4';
-const GID_OCIOSO = import.meta.env.VITE_GID_OCIOSO || '1024045145';
+/**
+ * Tudo numa planilha só agora: "Painel Aderência - KPI Combustivel".
+ * Abas usadas:
+ *   - Base veloe (gid=101845243)  → transações Veloe + gerente já mapeado
+ *   - Base ZUQ   (gid=1442572254) → telemetria diária (motor ocioso)
+ */
+const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
+const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
+const GID_OCIOSO = import.meta.env.VITE_GID_OCIOSO || '1442572254';
 
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
 }
 
-/** Fetch da base unificada Veloe GO Consolidado (combustível). */
+/** Fetch da aba "Base veloe" da Painel Aderência. */
 export async function fetchVeloeData(): Promise<Transacao[]> {
-  const url = getSheetCsvUrl(SHEET_ID_VELOE, GID_VELOE);
+  const url = getSheetCsvUrl(SHEET_ID, GID_VELOE);
   const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`Falha na base Veloe: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Falha na Base veloe: HTTP ${res.status}`);
   const text = await res.text();
   const rows = parseCsv(text);
-  const raw = csvToObjects<VeloeRow>(rows);
-  return raw.map(normalizeVeloeRow);
+  // Linha 1 da Base veloe tem totalizadores/junk, header está na linha 2
+  const raw = csvToObjects<VeloeRow>(rows, { skipRows: 1 });
+  return raw.map(normalizeVeloeRow).filter((t) => t.placa); // descarta linhas sem placa
 }
 
-/** Fetch da Base ZUQ (telemetria — motor ocioso por placa/dia). */
+/** Fetch da aba "Base ZUQ" da Painel Aderência. */
 export async function fetchOciosoData(): Promise<OciosoDia[]> {
-  const url = getSheetCsvUrl(SHEET_ID_OCIOSO, GID_OCIOSO);
+  const url = getSheetCsvUrl(SHEET_ID, GID_OCIOSO);
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`Falha na Base ZUQ: HTTP ${res.status}`);
   const text = await res.text();
   const rows = parseCsv(text);
-  // ZUQ tem linha 1 vazia/#N/A; o header real está na linha 2
+  // ZUQ também tem linha 1 vazia/#N/A
   const raw = csvToObjects<OciosoRow>(rows, { skipRows: 1 });
   return raw.map(normalizeOciosoRow).filter((r) => r.placa);
 }
 
 /**
- * Fetch das duas bases em paralelo + cruzamento de gerente.
- * Pra cada placa na ZUQ, descobre o gerente predominante e aplica
- * nas transações Veloe correspondentes. Fallback: descricaoCC.
+ * Fetch das duas abas em paralelo.
+ * AGORA o gerente vem direto da Base veloe (coluna "Gerente"),
+ * não precisa mais cruzar com a ZUQ. Se ZUQ falhar, Veloe continua funcionando.
  */
 export async function fetchAll(): Promise<{
   veloe: Transacao[];
@@ -48,74 +53,62 @@ export async function fetchAll(): Promise<{
   const [veloe, ociosoResult] = await Promise.all([
     fetchVeloeData(),
     fetchOciosoData().catch((e) => {
-      console.warn('Base ZUQ indisponível, usando proxy de gerente:', e);
+      console.warn('Base ZUQ indisponível:', e);
       return [] as OciosoDia[];
     }),
   ]);
 
-  const placasGerente = buildPlacaGerenteMap(ociosoResult);
-
+  // placasGerente continua existindo só pra manter a API,
+  // mas agora é montado a partir da Veloe (que já tem gerente)
+  const placasGerente = new Map<string, string>();
   for (const t of veloe) {
-    const real = placasGerente.get(t.placa.toUpperCase());
-    t.gerente = real || t.descricaoCC || 'Sem gerente';
+    if (t.placa && t.gerente && !placasGerente.has(t.placa.toUpperCase())) {
+      placasGerente.set(t.placa.toUpperCase(), t.gerente);
+    }
   }
 
   return { veloe, ocioso: ociosoResult, placasGerente };
 }
 
 /**
- * Para cada placa, descobre o gerente mais frequente na ZUQ.
- * Em caso de empate, prefere qualquer gerente nominal sobre "Gestão Frota".
+ * Normaliza uma linha da Base veloe (Painel Aderência).
+ * Diferenças em relação à Veloe antiga:
+ *   - "Data/ Hora transação" foi separada em "Data/ Hora" (data) + "Hora" (hora)
+ *   - "Descrição Centro de custo placa" virou "Descrição" (coluna BB)
+ *   - "Gerente" vem direto (sem cruzamento com ZUQ)
+ *   - "Centro de custo veículo" virou "Centro de Custo" (coluna BA, sem til em "custo")
  */
-function buildPlacaGerenteMap(ocioso: OciosoDia[]): Map<string, string> {
-  const counts = new Map<string, Map<string, number>>();
-  for (const o of ocioso) {
-    if (!o.placa || !o.gerente) continue;
-    const key = o.placa.toUpperCase();
-    let inner = counts.get(key);
-    if (!inner) {
-      inner = new Map();
-      counts.set(key, inner);
-    }
-    inner.set(o.gerente, (inner.get(o.gerente) || 0) + 1);
-  }
-  const out = new Map<string, string>();
-  for (const [placa, inner] of counts) {
-    let best: string | null = null;
-    let bestN = -1;
-    for (const [g, n] of inner) {
-      const isGenerico = g === 'Gestão Frota';
-      if (n > bestN || (n === bestN && best === 'Gestão Frota' && !isGenerico)) {
-        best = g;
-        bestN = n;
-      }
-    }
-    if (best) out.set(placa, best);
-  }
-  return out;
-}
-
 function normalizeVeloeRow(r: VeloeRow): Transacao {
+  // Combina data + hora em uma string única pro parseDate
+  const dataStr = r['Data/ Hora'] || '';
+  const horaStr = r['Hora'] || '';
+  const dataHoraCombinada = horaStr ? `${dataStr} ${horaStr}` : dataStr;
+
+  // gerente: usa o real; se vier "Outros" ou vazio, cai pra descricaoCC
+  const gerenteRaw = (r['Gerente'] || '').trim();
+  const descricaoCC = r['Descrição'] || r['Descrição Centro de Custo Motorista'] || 'Sem CC';
+  const gerenteFinal = gerenteRaw && gerenteRaw !== 'Outros' ? gerenteRaw : descricaoCC;
+
   return {
     contrato: r['Contrato'] || '',
     filial: r['Nome Filial'] || '',
     base: r['Base'] || '',
-    perfilUso: r['Perfil de uso'] || '',
+    perfilUso: r['Perfil de uso'] || r['Para'] || '',
     placa: r['Placa'] || '',
     modelo: r['Modelo veículo'] || '',
     nomeVeiculo: r['Nome Veículo'] || '',
     tipoFrota: r['Tipo de Frota'] || '',
-    centroCustoVeiculo: r['Centro de custo veículo'] || '',
-    descricaoCC: r['Descrição Centro de custo placa'] || r['Descrição Centro de Custo Motorista'] || 'Sem CC',
+    centroCustoVeiculo: r['Centro de Custo'] || r['CC'] || '',
+    descricaoCC,
     estado: r['Estado veículo'] || '',
-    cidade: r['Cidade veículo'] || '',
+    cidade: r['Cidade veículo'] || r['Cidade'] || '',
     motorista: r['Nome motorista'] || '',
     cpfMotorista: r['CPF Motorista'] || '',
     matriculaMotorista: r['Matrícula Motorista'] || '',
-    gerente: '', // preenchido depois via cruzamento com ZUQ
+    gerente: gerenteFinal,
 
-    dataTransacao: parseDate(r['Data/ Hora transação']),
-    dataPostagem: parseDate(r['Data postagem']),
+    dataTransacao: parseDate(dataHoraCombinada),
+    dataPostagem: null, // base nova não tem mais "Data postagem"
 
     nomeEC: r['Nome EC'] || '',
     bandeiraEC: r['Bandeira EC'] || '',
@@ -134,7 +127,7 @@ function normalizeVeloeRow(r: VeloeRow): Transacao {
 
     hodometroAnterior: parseNumber(r['Hodômetro Anterior - Dig. Motorista']),
     hodometroTransacao: parseNumber(r['Hodômetro Transação - Dig. Motorista']),
-    rendimentoMedio: parseNumber(r['Rendimento Médio']),
+    rendimentoMedio: parseNumber(r['Rendimento Médio']) || parseNumber(r['Meta consumo']),
     kmHrPercorrido: parseNumber(r['Km/Hr Percorrido']),
     mediaEfetiva: parseNumber(r['Média Efetiva (Km/Hr)']),
     tolerancia: parseNumber(r['Tolerância Rendimento Veículo (%)']),
