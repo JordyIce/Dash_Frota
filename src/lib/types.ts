@@ -132,7 +132,7 @@ export interface Transacao {
   tolerancia: number;
   desvioPercentual: number;
   desvioNumero: number;
-  descricaoDesvio: string;
+  statusTransacao: string;     // "OK" ou "NOK" — NOK = transação com restrição (Veloe negou)
 
   raw: VeloeRow;
 }
