@@ -9,12 +9,14 @@ import {
   TrendingUp,
   Tag,
   Truck,
+  LayoutGrid,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
 const links = [
   { to: '/orcamento', label: 'Orçamento', icon: Wallet, hint: 'Gasto de combustível' },
-  { to: '/consumo', label: 'Consumo', icon: Fuel, hint: 'Por gerência/filial' },
+  { to: '/consumo', label: 'Consumo', icon: Fuel, hint: 'Por gerente' },
+  { to: '/performance', label: 'Performance Stratws', icon: LayoutGrid, hint: 'Geral × Gerência · Tipo × Mês' },
   { to: '/ranking', label: 'Ranking KM/L', icon: Trophy, hint: 'Melhores e piores' },
   { to: '/periodo', label: 'Período', icon: CalendarRange, hint: 'Dia/semana/mês/ano' },
   { to: '/condutores', label: 'Condutores', icon: Users, hint: 'Abaixo da meta' },
