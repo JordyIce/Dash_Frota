@@ -3,7 +3,7 @@ import { parseDate, parseNumber } from './utils';
 import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 
 /**
- * Tudo numa planilha só agora: "Painel Aderência - KPI Combustivel".
+ * Tudo numa planilha só: "Painel Aderência - KPI Combustivel".
  * Abas usadas:
  *   - Base veloe (gid=101845243)  → transações Veloe + gerente já mapeado
  *   - Base ZUQ   (gid=1442572254) → telemetria diária (motor ocioso)
@@ -25,7 +25,7 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   const rows = parseCsv(text);
   // Linha 1 da Base veloe tem totalizadores/junk, header está na linha 2
   const raw = csvToObjects<VeloeRow>(rows, { skipRows: 1 });
-  return raw.map(normalizeVeloeRow).filter((t) => t.placa); // descarta linhas sem placa
+  return raw.map(normalizeVeloeRow).filter((t) => t.placa);
 }
 
 /** Fetch da aba "Base ZUQ" da Painel Aderência. */
@@ -35,15 +35,13 @@ export async function fetchOciosoData(): Promise<OciosoDia[]> {
   if (!res.ok) throw new Error(`Falha na Base ZUQ: HTTP ${res.status}`);
   const text = await res.text();
   const rows = parseCsv(text);
-  // ZUQ também tem linha 1 vazia/#N/A
   const raw = csvToObjects<OciosoRow>(rows, { skipRows: 1 });
   return raw.map(normalizeOciosoRow).filter((r) => r.placa);
 }
 
 /**
  * Fetch das duas abas em paralelo.
- * AGORA o gerente vem direto da Base veloe (coluna "Gerente"),
- * não precisa mais cruzar com a ZUQ. Se ZUQ falhar, Veloe continua funcionando.
+ * O gerente vem direto da Base veloe; se ZUQ falhar, Veloe continua funcionando.
  */
 export async function fetchAll(): Promise<{
   veloe: Transacao[];
@@ -54,111 +52,4 @@ export async function fetchAll(): Promise<{
     fetchVeloeData(),
     fetchOciosoData().catch((e) => {
       console.warn('Base ZUQ indisponível:', e);
-      return [] as OciosoDia[];
-    }),
-  ]);
-
-  // placasGerente continua existindo só pra manter a API,
-  // mas agora é montado a partir da Veloe (que já tem gerente)
-  const placasGerente = new Map<string, string>();
-  for (const t of veloe) {
-    if (t.placa && t.gerente && !placasGerente.has(t.placa.toUpperCase())) {
-      placasGerente.set(t.placa.toUpperCase(), t.gerente);
-    }
-  }
-
-  return { veloe, ocioso: ociosoResult, placasGerente };
-}
-
-/**
- * Normaliza uma linha da Base veloe (Painel Aderência).
- * Diferenças em relação à Veloe antiga:
- *   - "Data/ Hora transação" foi separada em "Data/ Hora" (data) + "Hora" (hora)
- *   - "Descrição Centro de custo placa" virou "Descrição" (coluna BB)
- *   - "Gerente" vem direto (sem cruzamento com ZUQ)
- *   - "Centro de custo veículo" virou "Centro de Custo" (coluna BA, sem til em "custo")
- */
-function normalizeVeloeRow(r: VeloeRow): Transacao {
-  // Combina data + hora em uma string única pro parseDate
-  const dataStr = r['Data/ Hora'] || '';
-  const horaStr = r['Hora'] || '';
-  const dataHoraCombinada = horaStr ? `${dataStr} ${horaStr}` : dataStr;
-
-  // gerente: usa o real; se vier "Outros" ou vazio, cai pra descricaoCC
-  const gerenteRaw = (r['Gerente'] || '').trim();
-  const descricaoCC = r['Descrição'] || r['Descrição Centro de Custo Motorista'] || 'Sem CC';
-  const gerenteFinal = gerenteRaw && gerenteRaw !== 'Outros' ? gerenteRaw : descricaoCC;
-
-  return {
-    contrato: r['Contrato'] || '',
-    filial: r['Nome Filial'] || '',
-    base: r['Base'] || '',
-    perfilUso: r['Perfil de uso'] || r['Para'] || '',
-    placa: r['Placa'] || '',
-    modelo: r['Modelo veículo'] || '',
-    nomeVeiculo: r['Nome Veículo'] || '',
-    tipoFrota: r['Tipo de Frota'] || '',
-    centroCustoVeiculo: r['Centro de Custo'] || r['CC'] || '',
-    descricaoCC,
-    estado: r['Estado veículo'] || '',
-    cidade: r['Cidade veículo'] || r['Cidade'] || '',
-    motorista: r['Nome motorista'] || '',
-    cpfMotorista: r['CPF Motorista'] || '',
-    matriculaMotorista: r['Matrícula Motorista'] || '',
-    gerente: gerenteFinal,
-
-    dataTransacao: parseDate(dataHoraCombinada),
-    dataPostagem: null, // base nova não tem mais "Data postagem"
-
-    nomeEC: r['Nome EC'] || '',
-    bandeiraEC: r['Bandeira EC'] || '',
-    cidadeEC: r['Cidade EC'] || '',
-    ufEC: r['UF EC'] || '',
-
-    tipoMercadoria: r['Tipo Mercadoria'] || '',
-    mercadoria: r['Mercadoria'] || '',
-
-    qtdMercadoria: parseNumber(r['Qtd Mercadoria']),
-    valorUnitario: parseNumber(r['Valor Unit. Mercadoria']),
-    valorTotal: parseNumber(r['Valor total original']),
-    valorComDesconto: parseNumber(r['Valor total com desconto']),
-    valorEconomizado: parseNumber(r['Valor total Economizado']),
-    capacidadeTanque: parseNumber(r['Capacidade Tanque']),
-
-    hodometroAnterior: parseNumber(r['Hodômetro Anterior - Dig. Motorista']),
-    hodometroTransacao: parseNumber(r['Hodômetro Transação - Dig. Motorista']),
-    rendimentoMedio: parseNumber(r['Rendimento Médio']) || parseNumber(r['Meta consumo']),
-    kmHrPercorrido: parseNumber(r['Km/Hr Percorrido']),
-    mediaEfetiva: parseNumber(r['Média Efetiva (Km/Hr)']),
-    tolerancia: parseNumber(r['Tolerância Rendimento Veículo (%)']),
-    desvioPercentual: parseNumber(r['Desvio na Transação (%)']),
-    desvioNumero: parseNumber(r['Desvio na Transação (número)']),
-    descricaoDesvio: r['Descrição Desvio na Transação'] || '',
-
-    raw: r,
-  };
-}
-
-function normalizeOciosoRow(r: OciosoRow): OciosoDia {
-  return {
-    data: parseDate(r['Data']),
-    placa: (r['Veículo'] || '').toUpperCase().trim(),
-    distanciaKm: parseNumber(r['Distância(km)']),
-    ligadoMin: parseNumber(r['Ligado(min)']),
-    paradoIgnicaoMin: parseNumber(r['Parado com a Ignição Ligada(min)']),
-    motorOciosoHoras: parseNumber(r['Motor ocioso']),
-    velocidadeMaxima: parseNumber(r['Velocidade Máxima(km/h)']),
-    velocidadeMedia: parseNumber(r['Velocidade Média(km/h)']),
-    semana: r['Semana'] || '',
-    mes: r['Mês'] || '',
-    gerente: r['Gerente'] || '',
-    grupo: r['Grupo'] || '',
-    operacao: r['Operação'] || '',
-    raw: r,
-  };
-}
-
-/** Helper: só transações de combustível (descarta Arla, lubrificantes etc) */
-export function onlyCombustivel(rows: Transacao[]): Transacao[] {
-  return rows.filter((t) => t.tipoMercadoria === 'Combustível');
-}
+      return []
