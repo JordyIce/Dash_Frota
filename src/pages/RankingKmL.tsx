@@ -1,30 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useFilters } from '@/contexts/FiltersContext';
 import { applyFilters, applyFiltersOcioso } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
 import { num, fmtDate } from '@/lib/utils';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
-
-/**
- * Ranking KM/L - Top 10 piores por categoria de veículo.
- * Inspirado na aba "Performance Stratws" da Painel Aderência (gid=836290110).
- *
- * Notas:
- *  - Motor Ocioso vem da Base ZUQ (sum motorOciosoHoras da placa no período filtrado).
- *  - Meta mensal e % Orçamento vêm da aba Track Orçamento / Metas Gerenciais
- *    (ainda não integradas) — por enquanto aparecem como "—".
- */
-
-const CATEGORIAS_ORDEM = [
-  'Caminhao Guindauto',
-  'Caminhao Sky',
-  'Caminhao Leve',
-  'Pick-Up',
-  'Pick-Up Leve',
-  'Veiculo Leve',
-  'Cavalo Mecanico',
-];
 
 interface PlacaStats {
   placa: string;
@@ -40,13 +20,12 @@ interface PlacaStats {
   meta: number;
   pctConsumo: number;
   gastoReais: number;
-  metaMensal: number | null;
-  pctOrcamento: number | null;
 }
 
 export function RankingKmL() {
   const { data, ocioso } = useData();
   const { filters } = useFilters();
+  const [topN, setTopN] = useState(20);
 
   const transFiltradas = useMemo(
     () => onlyCombustivel(applyFilters(data, filters)),
@@ -82,7 +61,6 @@ export function RankingKmL() {
       somaProdMeta: number;
       somaLitros: number;
       somaGasto: number;
-      transacoes: number;
     }
     const map = new Map<string, Acc>();
 
@@ -102,11 +80,9 @@ export function RankingKmL() {
         somaProdMeta: 0,
         somaLitros: 0,
         somaGasto: 0,
-        transacoes: 0,
       };
       e.kmRodado += t.kmHrPercorrido > 0 ? t.kmHrPercorrido : 0;
       e.somaGasto += t.valorTotal || 0;
-      e.transacoes++;
       if (t.mediaEfetiva > 0 && t.qtdMercadoria > 0) {
         e.somaProdKmL += t.mediaEfetiva * t.qtdMercadoria;
         e.somaLitros += t.qtdMercadoria;
@@ -143,47 +119,22 @@ export function RankingKmL() {
         meta,
         pctConsumo,
         gastoReais: e.somaGasto,
-        metaMensal: null,
-        pctOrcamento: null,
       });
     }
     return stats;
   }, [transFiltradas, ociosoPorPlaca]);
 
-  const porCategoria = useMemo(() => {
-    const map = new Map<string, PlacaStats[]>();
-    for (const s of statsPorPlaca) {
-      const arr = map.get(s.categoria) || [];
-      arr.push(s);
-      map.set(s.categoria, arr);
-    }
-    const result = new Map<string, PlacaStats[]>();
-    for (const [cat, arr] of map.entries()) {
-      const top10 = [...arr]
-        .filter((s) => s.meta > 0)
-        .sort((a, b) => a.pctConsumo - b.pctConsumo)
-        .slice(0, 10);
-      if (top10.length > 0) result.set(cat, top10);
-    }
-    return result;
-  }, [statsPorPlaca]);
+  const topPiores = useMemo(() => {
+    return [...statsPorPlaca]
+      .filter((s) => s.meta > 0)
+      .sort((a, b) => a.pctConsumo - b.pctConsumo)
+      .slice(0, topN);
+  }, [statsPorPlaca, topN]);
 
-  const categoriasOrdenadas = useMemo(() => {
-    const todas = Array.from(porCategoria.keys());
-    const principais = CATEGORIAS_ORDEM.filter((c) => todas.includes(c));
-    const outras = todas
-      .filter((c) => !CATEGORIAS_ORDEM.includes(c))
-      .sort((a, b) => (porCategoria.get(b)?.length || 0) - (porCategoria.get(a)?.length || 0));
-    return [...principais, ...outras];
-  }, [porCategoria]);
-
-  if (statsPorPlaca.length === 0 || categoriasOrdenadas.length === 0) {
+  if (topPiores.length === 0) {
     return (
       <div>
-        <PageHeader
-          title="Ranking KM/L"
-          subtitle="Top 10 piores em consumo por categoria de veículo"
-        />
+        <PageHeader title="Ranking KM/L" subtitle="Top piores em consumo" />
         <Card title="Sem dados">
           <EmptyState />
         </Card>
@@ -195,96 +146,99 @@ export function RankingKmL() {
     <div>
       <PageHeader
         title="Ranking KM/L"
-        subtitle="Top 10 piores em consumo por categoria · Inspirado em Performance Stratws · Motor Ocioso da Base ZUQ"
+        subtitle="Top piores em consumo · Use o filtro Tipo do Carro pra restringir a uma categoria · Motor Ocioso da Base ZUQ"
+        actions={
+          <select
+            value={topN}
+            onChange={(e) => setTopN(Number(e.target.value))}
+            className="text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
+          >
+            <option value={10}>Top 10</option>
+            <option value={20}>Top 20</option>
+            <option value={50}>Top 50</option>
+            <option value={100}>Top 100</option>
+          </select>
+        }
       />
 
-      <div className="space-y-4">
-        {categoriasOrdenadas.map((cat) => {
-          const placas = porCategoria.get(cat) || [];
-          return (
-            <Card key={cat} title={cat} subtitle={`${placas.length} placa${placas.length !== 1 ? 's' : ''} no top piores`}>
-              <TabelaCategoria placas={placas} />
-            </Card>
-          );
-        })}
-      </div>
+      <Card title="Piores placas" subtitle={`${topPiores.length} placas ordenadas pelo pior % consumo`}>
+        <TabelaPiores placas={topPiores} />
+      </Card>
     </div>
   );
 }
 
-function TabelaCategoria({ placas }: { placas: PlacaStats[] }) {
+function TabelaPiores({ placas }: { placas: PlacaStats[] }) {
   const pctClass = (v: number) =>
-    v >= 0 ? 'text-emerald-700' : v >= -10 ? 'text-amber-700' : 'text-red-700';
+    v >= 0 ? 'text-emerald-600 font-semibold' :
+    v >= -10 ? 'text-amber-600 font-semibold' :
+    'text-red-600 font-semibold';
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11px] tabular-nums">
         <thead>
-          <tr className="bg-slate-100 text-slate-700">
-            <th className="text-center px-2 py-1.5 font-semibold whitespace-nowrap">RKg</th>
-            <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Operação</th>
-            <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Gerente</th>
-            <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Placa</th>
-            <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Modelo</th>
-            <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Último condutor</th>
-            <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Motor Ocioso</th>
-            <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Km rodado</th>
-            <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Últ. abast.</th>
-            <th className="text-right px-2 py-1.5 font-semibold bg-blue-50 whitespace-nowrap">Consumo</th>
-            <th className="text-right px-2 py-1.5 font-semibold bg-blue-50 whitespace-nowrap">Meta</th>
-            <th className="text-right px-2 py-1.5 font-semibold bg-blue-50 whitespace-nowrap">%</th>
-            <th className="text-right px-2 py-1.5 font-semibold bg-purple-50 whitespace-nowrap">R$</th>
-            <th className="text-right px-2 py-1.5 font-semibold bg-purple-50 whitespace-nowrap">Meta R$</th>
-            <th className="text-right px-2 py-1.5 font-semibold bg-purple-50 whitespace-nowrap">%</th>
+          <tr className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+            <th className="text-center px-2 py-2 font-semibold whitespace-nowrap">RKg</th>
+            <th className="text-left px-2 py-2 font-semibold whitespace-nowrap">Operação</th>
+            <th className="text-left px-2 py-2 font-semibold whitespace-nowrap">Gerente</th>
+            <th className="text-left px-2 py-2 font-semibold whitespace-nowrap">Tipo</th>
+            <th className="text-left px-2 py-2 font-semibold whitespace-nowrap">Placa</th>
+            <th className="text-left px-2 py-2 font-semibold whitespace-nowrap">Modelo</th>
+            <th className="text-left px-2 py-2 font-semibold whitespace-nowrap">Último condutor</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap">Motor Ocioso</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap">Km rodado</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap">Últ. abast.</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap border-l border-slate-200 dark:border-slate-700">Consumo</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap">Meta</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap">%</th>
+            <th className="text-right px-2 py-2 font-semibold whitespace-nowrap border-l border-slate-200 dark:border-slate-700">R$</th>
           </tr>
         </thead>
         <tbody>
           {placas.map((p, i) => (
-            <tr key={p.placa} className="border-t border-slate-100 hover:bg-slate-50">
-              <td className="text-center px-2 py-1 font-bold bg-red-100 text-red-900 whitespace-nowrap">
+            <tr key={p.placa} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              <td className="text-center px-2 py-1.5 font-bold text-slate-400 whitespace-nowrap">
                 {i + 1}
               </td>
-              <td className="text-left px-2 py-1 text-slate-800 max-w-[200px] truncate" title={p.operacao}>
+              <td className="text-left px-2 py-1.5 max-w-[200px] truncate" title={p.operacao}>
                 {p.operacao || '—'}
               </td>
-              <td className="text-left px-2 py-1 text-slate-700 whitespace-nowrap">
+              <td className="text-left px-2 py-1.5 whitespace-nowrap">
                 {p.gerente || '—'}
               </td>
-              <td className="text-left px-2 py-1 font-mono font-semibold text-slate-900 whitespace-nowrap">
+              <td className="text-left px-2 py-1.5 whitespace-nowrap text-slate-500">
+                {p.categoria}
+              </td>
+              <td className="text-left px-2 py-1.5 font-mono font-semibold whitespace-nowrap">
                 {p.placa}
               </td>
-              <td className="text-left px-2 py-1 text-slate-600 max-w-[180px] truncate" title={p.modelo}>
+              <td className="text-left px-2 py-1.5 max-w-[180px] truncate text-slate-500" title={p.modelo}>
                 {p.modelo || '—'}
               </td>
-              <td className="text-left px-2 py-1 text-slate-500 max-w-[180px] truncate" title={p.ultimoCondutor}>
+              <td className="text-left px-2 py-1.5 max-w-[180px] truncate text-slate-500" title={p.ultimoCondutor}>
                 {p.ultimoCondutor}
               </td>
-              <td className="text-right px-2 py-1 text-slate-700 whitespace-nowrap">
+              <td className="text-right px-2 py-1.5 whitespace-nowrap">
                 {p.motorOcioso > 0 ? `${num(p.motorOcioso, 0)}h` : '—'}
               </td>
-              <td className="text-right px-2 py-1 text-slate-700 whitespace-nowrap">
+              <td className="text-right px-2 py-1.5 whitespace-nowrap">
                 {num(p.kmRodado, 0)}
               </td>
-              <td className="text-right px-2 py-1 text-slate-500 whitespace-nowrap">
+              <td className="text-right px-2 py-1.5 whitespace-nowrap text-slate-500">
                 {p.ultimoAbastecimento ? fmtDate(p.ultimoAbastecimento) : '—'}
               </td>
-              <td className="text-right px-2 py-1 bg-blue-50 font-semibold text-slate-900 whitespace-nowrap">
+              <td className="text-right px-2 py-1.5 font-semibold whitespace-nowrap border-l border-slate-100 dark:border-slate-800">
                 {num(p.consumo, 2)}
               </td>
-              <td className="text-right px-2 py-1 bg-blue-50 text-slate-600 whitespace-nowrap">
-                {p.meta > 0 ? num(p.meta, 2) : '—'}
+              <td className="text-right px-2 py-1.5 text-slate-500 whitespace-nowrap">
+                {num(p.meta, 2)}
               </td>
-              <td className={`text-right px-2 py-1 bg-blue-50 font-semibold whitespace-nowrap ${pctClass(p.pctConsumo)}`}>
-                {p.meta > 0 ? `${num(p.pctConsumo, 0)}%` : '—'}
+              <td className={`text-right px-2 py-1.5 whitespace-nowrap ${pctClass(p.pctConsumo)}`}>
+                {num(p.pctConsumo, 0)}%
               </td>
-              <td className="text-right px-2 py-1 bg-purple-50 text-slate-700 whitespace-nowrap">
+              <td className="text-right px-2 py-1.5 whitespace-nowrap border-l border-slate-100 dark:border-slate-800">
                 R$ {num(p.gastoReais, 0)}
-              </td>
-              <td className="text-right px-2 py-1 bg-purple-50 text-slate-400 whitespace-nowrap">
-                {p.metaMensal !== null ? `R$ ${num(p.metaMensal, 0)}` : '—'}
-              </td>
-              <td className="text-right px-2 py-1 bg-purple-50 text-slate-400 whitespace-nowrap">
-                {p.pctOrcamento !== null ? `${num(p.pctOrcamento, 0)}%` : '—'}
               </td>
             </tr>
           ))}
