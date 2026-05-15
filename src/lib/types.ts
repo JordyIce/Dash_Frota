@@ -7,14 +7,14 @@ export interface VeloeRow {
   'CNPJ Filial': string;
   'Nome Filial': string;
   Base: string;
-  'Perfil de uso': string; // GERAL, PICK-UP LEVE, CAMINHAO GUINDAUTO, FROTA LEVE, FROTA PESADA, PICK-UP, MOTO
+  'Perfil de uso': string;
   Placa: string;
   'Modelo veículo': string;
   'Nome Veículo': string;
-  'Tipo de Frota': string; // Alugada, Própria, Nenhuma
+  'Tipo de Frota': string;
   'Capacidade Tanque': string;
-  CC: string;                          // geralmente vazio
-  Descrição: string;                   // descrição do CC da placa (movida pra cá)
+  CC: string;
+  Descrição: string;
   'Estado veículo': string;
   'Cidade veículo': string;
   Patrimônio: string;
@@ -27,8 +27,8 @@ export interface VeloeRow {
   'Categoria CNH': string;
   'Centro de Custo Motorista': string;
   'Descrição Centro de Custo Motorista': string;
-  'Data/ Hora': string;                // só data agora ("1/2/2026")
-  Hora: string;                        // hora separada ("07:52:52")
+  'Data/ Hora': string;
+  Hora: string;
   'N° autorização': string;
   'Nota fiscal': string;
   'Tipo de cartão': string;
@@ -64,17 +64,16 @@ export interface VeloeRow {
   'Código Frota - Dig.Motorista': string;
   'Placa - Dig.Motorista': string;
   'Ordem Serviço - Dig.Motorista': string;
-  // Campos novos/calculados da Painel Aderência:
-  'Centro de Custo': string;           // ex "141020202"
-  Mês: string;                         // "Janeiro" etc
-  Gerente: string;                     // Nilton, Moslay, Amanda, Max, Outros, Gestão Frota, etc — PRINCIPAL FEATURE NOVA
+  'Centro de Custo': string;
+  Mês: string;
+  Gerente: string;
   Check: string;
-  Para: string;                        // categoria do veículo (Pick-Up Leve, Caminhao Sky, etc)
+  Para: string;
   'Semana do Mês': string;
   Trimestre: string;
   'Meta consumo': string;
-  'Status transação': string;          // OK / NOK
-  Tipo: string;                        // Gasolina / Diesel S10 / Arla / etc (simplificado)
+  'Status transação': string;
+  Tipo: string;
   Cidade: string;
   [key: string]: string;
 }
@@ -85,21 +84,21 @@ export interface Transacao {
   contrato: string;
   filial: string;
   base: string;
-  perfilUso: string;       // "Tipo do Carro" no filtro (FROTA LEVE, CAMINHAO GUINDAUTO, etc)
+  perfilUso: string;        // valor bruto de "Perfil de uso" (FROTA LEVE, CAMINHAO GUINDAUTO em CAIXA)
+  categoriaVeiculo: string; // valor de "Para" (Pick-Up Leve, Caminhao Sky em Title Case) → usado no filtro Tipo do Carro
   placa: string;
   modelo: string;
   nomeVeiculo: string;
-  tipoFrota: string;       // "Grupo do Carro" no filtro (Alugada, Própria, Nenhuma)
+  tipoFrota: string;       // Alugada, Própria, Nenhuma (não usado mais como filtro)
   centroCustoVeiculo: string;
-  descricaoCC: string;     // "Gerência" (proxy)
+  descricaoCC: string;     // Descrição (Obras SP, Multiservicos Sao Benedito) → filtro Centro de Custo
   estado: string;
   cidade: string;
   motorista: string;
   cpfMotorista: string;
   matriculaMotorista: string;
 
-  // gerente real — agora vem direto da Base veloe (coluna BD).
-  // Cai pra descricaoCC quando vem vazio ou "Outros".
+  // gerente real — vem direto da coluna Gerente da Base veloe.
   gerente: string;
 
   // tempo
@@ -114,38 +113,38 @@ export interface Transacao {
 
   // mercadoria
   tipoMercadoria: string;  // Combustível, Aditivos e Lubrificantes
-  mercadoria: string;      // Diesel S10, Gasolina Comum, etc
+  mercadoria: string;      // Diesel S10, Gasolina Comum, Arla 32 (valor original da Veloe)
+  combustivel: string;     // valor simplificado da coluna "Tipo" (Gasolina, Diesel S10, Arla) → filtro Diesel/Gasolina
 
   // métricas
-  qtdMercadoria: number;   // litros (se Combustível)
-  valorUnitario: number;   // preço por litro
-  valorTotal: number;      // R$ gasto (original)
+  qtdMercadoria: number;
+  valorUnitario: number;
+  valorTotal: number;
   valorComDesconto: number;
   valorEconomizado: number;
   capacidadeTanque: number;
 
   hodometroAnterior: number;
   hodometroTransacao: number;
-  rendimentoMedio: number;     // meta KM/L do veículo
+  rendimentoMedio: number;
   kmHrPercorrido: number;
-  mediaEfetiva: number;        // KM/L real
-  tolerancia: number;          // % tolerância da meta
+  mediaEfetiva: number;
+  tolerancia: number;
   desvioPercentual: number;
   desvioNumero: number;
-  descricaoDesvio: string;     // "Desvio Abaixo", "Desvio Acima", "Sem Desvio"
+  descricaoDesvio: string;
 
-  // bruto pra debug
   raw: VeloeRow;
 }
 
 /** Filtros globais — aplicados em todas as páginas. */
 export interface FilterState {
-  centroCusto: string[];      // valores de descricaoCC
+  centroCusto: string[];      // valores de descricaoCC (Descrição na Base veloe — Obras SP, etc)
   gerente: string[];          // valores de gerente
   dataInicio: Date | null;
   dataFim: Date | null;
-  tipoCarro: string[];        // perfilUso
-  grupoCarro: string[];       // tipoFrota
+  tipoCarro: string[];        // valores de "Para" (Pick-Up Leve, Caminhao Sky, etc)
+  combustivel: string[];      // Gasolina, Diesel S10, Arla — substitui o antigo grupoCarro
 }
 
 export const emptyFilters: FilterState = {
@@ -154,11 +153,11 @@ export const emptyFilters: FilterState = {
   dataInicio: null,
   dataFim: null,
   tipoCarro: [],
-  grupoCarro: [],
+  combustivel: [],
 };
 
 /**
- * Linha bruta da Base ZUQ (telemetria) — gid=1442572254 na Painel Aderência.
+ * Linha bruta da Base ZUQ (telemetria).
  * IMPORTANTE: a linha 1 do CSV é vazia/#N/A, então o header está na linha 2.
  * Parser precisa usar skipRows: 1.
  */
@@ -169,41 +168,4 @@ export interface OciosoRow {
   'Ligado(min)': string;
   'Desligado(min)': string;
   'Parado(min)': string;
-  'Parado com a Ignição Ligada(min)': string;
-  Primeira: string;
-  Última: string;
-  'Sem comunicação(min)': string;
-  'Velocidade Máxima(km/h)': string;
-  'Velocidade Média(km/h)': string;
-  'Na base(min)': string;
-  'Fora da base(min)': string;
-  'Odômetro Inicial(km)': string;
-  'Odômetro Final(km)': string;
-  'Horímetro Inicial(Hrs)': string;
-  'Horímetro Final(Hrs)': string;
-  'Motor ocioso': string;
-  Semana: string;
-  Mês: string;
-  Gerente: string;
-  Grupo: string;
-  Operação: string;
-  [key: string]: string;
-}
-
-/** Linha normalizada de Motor Ocioso (uma por placa/dia). */
-export interface OciosoDia {
-  data: Date | null;
-  placa: string;
-  distanciaKm: number;
-  ligadoMin: number;
-  paradoIgnicaoMin: number;
-  motorOciosoHoras: number;   // já vem calculado na planilha (paradoIgnicaoMin / 60)
-  velocidadeMaxima: number;
-  velocidadeMedia: number;
-  semana: string;             // "Semana 5"
-  mes: string;                // "Abril"
-  gerente: string;            // nome real
-  grupo: string;              // categoria (Pick-Up, Caminhao Sky, etc)
-  operacao: string;           // "141020202 - Multiservicos Itapaje"
-  raw: OciosoRow;
-}
+  'Parado com
