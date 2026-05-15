@@ -14,6 +14,7 @@ import { Condutores } from '@/pages/Condutores';
 import { MotorOcioso } from '@/pages/MotorOcioso';
 import { EvolucaoSemanal } from '@/pages/EvolucaoSemanal';
 import { PrecoLt } from '@/pages/PrecoLt';
+import { PerformanceStratws } from '@/pages/PerformanceStratws';
 
 function Shell() {
   const { loading, error, reload, loadedAt } = useData();
@@ -37,6 +38,7 @@ function Shell() {
               <Route path="/ocioso" element={<MotorOcioso />} />
               <Route path="/evolucao" element={<EvolucaoSemanal />} />
               <Route path="/preco" element={<PrecoLt />} />
+              <Route path="/performance" element={<PerformanceStratws />} />
               <Route path="*" element={<Navigate to="/orcamento" replace />} />
             </Routes>
           )}
