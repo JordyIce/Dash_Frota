@@ -6,16 +6,7 @@ import { onlyCombustivel } from '@/lib/data';
 import { num } from '@/lib/utils';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 
-/**
- * Ranking Condutores - inspirado na aba "Ranking motoristas" (gid=1258518385).
- *
- * Mostra DOIS rankings lado a lado:
- *  1. Transações com restrição (Top piores em desvios)
- *  2. R$ Gasto (Top maiores gastos)
- *
- * "Restrição" = transação com Status transação = NOK (cartão Veloe negou a transação:
- * fora do horário, limite, posto não autorizado, etc).
- */
+type SortBy = 'restricao' | 'gasto';
 
 interface CondutorStats {
   motorista: string;
@@ -32,6 +23,7 @@ export function Condutores() {
   const { data } = useData();
   const { filters } = useFilters();
   const [topN, setTopN] = useState(10);
+  const [sortBy, setSortBy] = useState<SortBy>('restricao');
 
   const filtered = useMemo(() => applyFilters(data, filters), [data, filters]);
   const combustivel = useMemo(() => onlyCombustivel(filtered), [filtered]);
@@ -66,9 +58,7 @@ export function Condutores() {
         operacoes: new Map<string, number>(),
       };
 
-      if (t.statusTransacao === 'NOK') {
-        e.transRestricao++;
-      }
+      if (t.statusTransacao === 'NOK') e.transRestricao++;
 
       e.gasto += t.valorTotal || 0;
       e.kmRodado += t.kmHrPercorrido > 0 ? t.kmHrPercorrido : 0;
@@ -78,11 +68,9 @@ export function Condutores() {
         e.somaProdKmL += t.mediaEfetiva * t.qtdMercadoria;
         e.somaLitros += t.qtdMercadoria;
       }
-
       if (t.descricaoCC) {
         e.operacoes.set(t.descricaoCC, (e.operacoes.get(t.descricaoCC) || 0) + 1);
       }
-
       if (t.gerente) e.gerente = t.gerente;
 
       map.set(t.motorista, e);
@@ -113,19 +101,20 @@ export function Condutores() {
     return stats;
   }, [combustivel]);
 
-  const topRestricao = useMemo(() => {
-    return [...statsPorCondutor]
-      .filter((s) => s.transRestricao > 0)
-      .sort((a, b) => b.transRestricao - a.transRestricao)
-      .slice(0, topN);
-  }, [statsPorCondutor, topN]);
+  const ranking = useMemo(() => {
+    const filtroPositivo = sortBy === 'restricao'
+      ? (s: CondutorStats) => s.transRestricao > 0
+      : (s: CondutorStats) => s.gasto > 0;
 
-  const topGasto = useMemo(() => {
+    const comparator = sortBy === 'restricao'
+      ? (a: CondutorStats, b: CondutorStats) => b.transRestricao - a.transRestricao
+      : (a: CondutorStats, b: CondutorStats) => b.gasto - a.gasto;
+
     return [...statsPorCondutor]
-      .filter((s) => s.gasto > 0)
-      .sort((a, b) => b.gasto - a.gasto)
+      .filter(filtroPositivo)
+      .sort(comparator)
       .slice(0, topN);
-  }, [statsPorCondutor, topN]);
+  }, [statsPorCondutor, sortBy, topN]);
 
   if (statsPorCondutor.length === 0) {
     return (
@@ -138,39 +127,59 @@ export function Condutores() {
     );
   }
 
+  const tituloCard = sortBy === 'restricao'
+    ? 'Transações com Maior Restrição'
+    : 'R$ Gasto por Condutor';
+  const subtituloCard = sortBy === 'restricao'
+    ? 'Condutores com mais transações NOK (negadas) no período'
+    : 'Condutores com maior gasto de combustível no período';
+
   return (
     <div>
       <PageHeader
         title="Ranking Condutores"
         subtitle={`${statsPorCondutor.length} condutores no período · Inspirado em "Ranking motoristas" · Restrição = transação NOK na Veloe`}
         actions={
-          <select
-            value={topN}
-            onChange={(e) => setTopN(Number(e.target.value))}
-            className="text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white"
-          >
-            <option value={10}>Top 10</option>
-            <option value={20}>Top 20</option>
-            <option value={50}>Top 50</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5">
+              <button
+                onClick={() => setSortBy('restricao')}
+                className={`px-4 py-1.5 text-xs font-medium rounded-md transition ${
+                  sortBy === 'restricao'
+                    ? 'bg-beq-blue text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                Restrição
+              </button>
+              <button
+                onClick={() => setSortBy('gasto')}
+                className={`px-4 py-1.5 text-xs font-medium rounded-md transition ${
+                  sortBy === 'gasto'
+                    ? 'bg-beq-blue text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                Gasto
+              </button>
+            </div>
+            <select
+              value={topN}
+              onChange={(e) => setTopN(Number(e.target.value))}
+              className="text-sm px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800"
+            >
+              <option value={10}>Top 10</option>
+              <option value={20}>Top 20</option>
+              <option value={50}>Top 50</option>
+              <option value={100}>Top 100</option>
+            </select>
+          </div>
         }
       />
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <Card
-          title="Transações com Maior Restrição"
-          subtitle="Condutores com mais transações NOK (negadas) no período"
-        >
-          <TabelaCondutores stats={topRestricao} highlight="restricao" />
-        </Card>
-
-        <Card
-          title="R$ Gasto por Condutor"
-          subtitle="Condutores com maior gasto de combustível no período"
-        >
-          <TabelaCondutores stats={topGasto} highlight="gasto" />
-        </Card>
-      </div>
+      <Card title={tituloCard} subtitle={subtituloCard}>
+        <TabelaCondutores stats={ranking} highlight={sortBy} />
+      </Card>
     </div>
   );
 }
@@ -180,7 +189,7 @@ function TabelaCondutores({
   highlight,
 }: {
   stats: CondutorStats[];
-  highlight: 'restricao' | 'gasto';
+  highlight: SortBy;
 }) {
   if (stats.length === 0) return <EmptyState />;
 
@@ -210,10 +219,10 @@ function TabelaCondutores({
               <td className="text-center px-2 py-1.5 font-bold text-slate-400 whitespace-nowrap">
                 {i + 1}
               </td>
-              <td className="text-left px-2 py-1.5 max-w-[200px] truncate font-medium" title={s.motorista}>
+              <td className="text-left px-2 py-1.5 max-w-[260px] truncate font-medium" title={s.motorista}>
                 {s.motorista}
               </td>
-              <td className="text-left px-2 py-1.5 max-w-[180px] truncate text-slate-500" title={s.operacao}>
+              <td className="text-left px-2 py-1.5 max-w-[220px] truncate text-slate-500" title={s.operacao}>
                 {s.operacao}
               </td>
               <td className="text-left px-2 py-1.5 whitespace-nowrap text-slate-500">
