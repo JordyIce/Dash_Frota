@@ -20,12 +20,13 @@ export function GlobalFilters() {
         ...data.map((d) => d.gerente),
         ...ocioso.map((o) => o.gerente),
       ]),
-      // Tipo do Carro: união do Perfil de uso (Veloe) com Grupo (ZUQ)
+      // Tipo do Carro: categoria amigável (coluna "Para") + grupo da ZUQ
       tipoCarro: unique([
-        ...data.map((d) => d.perfilUso),
+        ...data.map((d) => d.categoriaVeiculo),
         ...ocioso.map((o) => o.grupo),
       ]),
-      grupoCarro: unique(data.map((d) => d.tipoFrota)),
+      // Combustível: Gasolina, Diesel S10, Arla (coluna "Tipo")
+      combustivel: unique(data.map((d) => d.combustivel)),
     };
   }, [data, ocioso]);
 
@@ -74,10 +75,10 @@ export function GlobalFilters() {
           onChange={(v) => updateFilter('tipoCarro', v)}
         />
         <MultiSelect
-          label="Grupo do Carro"
-          options={opts.grupoCarro}
-          value={filters.grupoCarro}
-          onChange={(v) => updateFilter('grupoCarro', v)}
+          label="Combustível"
+          options={opts.combustivel}
+          value={filters.combustivel}
+          onChange={(v) => updateFilter('combustivel', v)}
         />
         <div>
           <label className="block text-[11px] font-medium text-slate-500 mb-1 uppercase tracking-wide">
