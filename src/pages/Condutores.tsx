@@ -13,7 +13,8 @@ import { Card, EmptyState, PageHeader } from '@/components/UI';
  *  1. Transações com restrição (Top piores em desvios)
  *  2. R$ Gasto (Top maiores gastos)
  *
- * "Restrição" = transação com Descrição Desvio ≠ "Sem Desvio"
+ * "Restrição" = transação com Status transação = NOK (cartão Veloe negou a transação:
+ * fora do horário, limite, posto não autorizado, etc).
  */
 
 interface CondutorStats {
@@ -65,7 +66,7 @@ export function Condutores() {
         operacoes: new Map<string, number>(),
       };
 
-      if (t.descricaoDesvio && t.descricaoDesvio !== 'Sem Desvio' && t.descricaoDesvio !== '') {
+      if (t.statusTransacao === 'NOK') {
         e.transRestricao++;
       }
 
@@ -141,7 +142,7 @@ export function Condutores() {
     <div>
       <PageHeader
         title="Ranking Condutores"
-        subtitle={`${statsPorCondutor.length} condutores no período · Inspirado em "Ranking motoristas" · Restrição = transação com Desvio Abaixo/Acima`}
+        subtitle={`${statsPorCondutor.length} condutores no período · Inspirado em "Ranking motoristas" · Restrição = transação NOK na Veloe`}
         actions={
           <select
             value={topN}
@@ -158,7 +159,7 @@ export function Condutores() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card
           title="Transações com Maior Restrição"
-          subtitle="Condutores com mais transações em desvio de consumo"
+          subtitle="Condutores com mais transações NOK (negadas) no período"
         >
           <TabelaCondutores stats={topRestricao} highlight="restricao" />
         </Card>
