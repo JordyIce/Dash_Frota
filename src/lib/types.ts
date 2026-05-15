@@ -1,5 +1,5 @@
 /**
- * Linha bruta da base "Veloe GO Consolidado" — espelha o header da planilha.
+ * Linha bruta da aba "Base veloe" da Painel Aderência (gid=101845243).
  * Os nomes preservam acentos/maiúsculas exatamente como vêm do Sheets.
  */
 export interface VeloeRow {
@@ -7,14 +7,14 @@ export interface VeloeRow {
   'CNPJ Filial': string;
   'Nome Filial': string;
   Base: string;
-  'Perfil de uso': string; // GERAL, PICK-UP LEVE, CAMINHAO GUINDAUTO, FROTA LEVE, FROTA PESADA, PICK-UP
+  'Perfil de uso': string; // GERAL, PICK-UP LEVE, CAMINHAO GUINDAUTO, FROTA LEVE, FROTA PESADA, PICK-UP, MOTO
   Placa: string;
   'Modelo veículo': string;
   'Nome Veículo': string;
   'Tipo de Frota': string; // Alugada, Própria, Nenhuma
   'Capacidade Tanque': string;
-  'Centro de custo veículo': string;
-  'Descrição Centro de custo placa': string;
+  CC: string;                          // geralmente vazio
+  Descrição: string;                   // descrição do CC da placa (movida pra cá)
   'Estado veículo': string;
   'Cidade veículo': string;
   Patrimônio: string;
@@ -27,8 +27,8 @@ export interface VeloeRow {
   'Categoria CNH': string;
   'Centro de Custo Motorista': string;
   'Descrição Centro de Custo Motorista': string;
-  'Data/ Hora transação': string;
-  'Data postagem': string;
+  'Data/ Hora': string;                // só data agora ("1/2/2026")
+  Hora: string;                        // hora separada ("07:52:52")
   'N° autorização': string;
   'Nota fiscal': string;
   'Tipo de cartão': string;
@@ -41,8 +41,8 @@ export interface VeloeRow {
   'Logradouro EC': string;
   'UF EC': string;
   'Cidade EC': string;
-  'Tipo Mercadoria': string; // Combustível, Aditivos e Lubrificantes
-  Mercadoria: string; // Diesel S10, Gasolina Comum, Arla 32, Diesel
+  'Tipo Mercadoria': string;
+  Mercadoria: string;
   'Qtd Mercadoria': string;
   'Valor Unit. Mercadoria': string;
   'Valor total original': string;
@@ -59,11 +59,23 @@ export interface VeloeRow {
   'Tolerância Rendimento Veículo (%)': string;
   'Desvio na Transação (%)': string;
   'Desvio na Transação (número)': string;
-  'Descrição Desvio na Transação': string; // Desvio Abaixo, Desvio Acima, Sem Desvio
-  'Centro Custo Transação': string;
+  'Descrição Desvio na Transação': string;
+  'Centro Custo Transação - Dig. Motorista': string;
   'Código Frota - Dig.Motorista': string;
   'Placa - Dig.Motorista': string;
   'Ordem Serviço - Dig.Motorista': string;
+  // Campos novos/calculados da Painel Aderência:
+  'Centro de Custo': string;           // ex "141020202"
+  Mês: string;                         // "Janeiro" etc
+  Gerente: string;                     // Nilton, Moslay, Amanda, Max, Outros, Gestão Frota, etc — PRINCIPAL FEATURE NOVA
+  Check: string;
+  Para: string;                        // categoria do veículo (Pick-Up Leve, Caminhao Sky, etc)
+  'Semana do Mês': string;
+  Trimestre: string;
+  'Meta consumo': string;
+  'Status transação': string;          // OK / NOK
+  Tipo: string;                        // Gasolina / Diesel S10 / Arla / etc (simplificado)
+  Cidade: string;
   [key: string]: string;
 }
 
@@ -86,8 +98,8 @@ export interface Transacao {
   cpfMotorista: string;
   matriculaMotorista: string;
 
-  // gerente real — populado via lookup placa→gerente da Base ZUQ.
-  // Cai pra descricaoCC quando a placa não tem correspondência.
+  // gerente real — agora vem direto da Base veloe (coluna BD).
+  // Cai pra descricaoCC quando vem vazio ou "Outros".
   gerente: string;
 
   // tempo
@@ -129,7 +141,7 @@ export interface Transacao {
 /** Filtros globais — aplicados em todas as páginas. */
 export interface FilterState {
   centroCusto: string[];      // valores de descricaoCC
-  gerente: string[];          // proxy: descricaoCC também (mesma coluna)
+  gerente: string[];          // valores de gerente
   dataInicio: Date | null;
   dataFim: Date | null;
   tipoCarro: string[];        // perfilUso
@@ -146,7 +158,7 @@ export const emptyFilters: FilterState = {
 };
 
 /**
- * Linha bruta da Base ZUQ (telemetria) — gid=1024045145 na planilha antiga.
+ * Linha bruta da Base ZUQ (telemetria) — gid=1442572254 na Painel Aderência.
  * IMPORTANTE: a linha 1 do CSV é vazia/#N/A, então o header está na linha 2.
  * Parser precisa usar skipRows: 1.
  */
