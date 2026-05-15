@@ -1,12 +1,14 @@
-import type { FilterState, Transacao } from './types';
+import type { FilterState, OciosoDia, Transacao } from './types';
 
 /** Aplica os filtros globais à lista de transações. */
 export function applyFilters(rows: Transacao[], f: FilterState): Transacao[] {
   return rows.filter((t) => {
     if (f.centroCusto.length > 0 && !f.centroCusto.includes(t.descricaoCC)) return false;
     if (f.gerente.length > 0 && !f.gerente.includes(t.gerente)) return false;
-    if (f.tipoCarro.length > 0 && !f.tipoCarro.includes(t.perfilUso)) return false;
-    if (f.grupoCarro.length > 0 && !f.grupoCarro.includes(t.tipoFrota)) return false;
+    // Tipo do Carro agora usa a coluna "Para" (categoriaVeiculo): Pick-Up Leve, Caminhao Sky, etc
+    if (f.tipoCarro.length > 0 && !f.tipoCarro.includes(t.categoriaVeiculo)) return false;
+    // Combustível: Gasolina / Diesel S10 / Arla (coluna "Tipo")
+    if (f.combustivel.length > 0 && !f.combustivel.includes(t.combustivel)) return false;
     if (f.dataInicio || f.dataFim) {
       if (!t.dataTransacao) return false;
       const d = t.dataTransacao.getTime();
@@ -28,7 +30,7 @@ export function activeFilterCount(f: FilterState): number {
   if (f.centroCusto.length) n++;
   if (f.gerente.length) n++;
   if (f.tipoCarro.length) n++;
-  if (f.grupoCarro.length) n++;
+  if (f.combustivel.length) n++;
   if (f.dataInicio || f.dataFim) n++;
   return n;
 }
@@ -37,21 +39,16 @@ export function activeFilterCount(f: FilterState): number {
  * Aplica os filtros globais à lista de Motor Ocioso (Base ZUQ).
  * Mapeamento dos filtros:
  *   - gerente   → gerente (real, vem direto da ZUQ)
- *   - tipoCarro → grupo   (Pick-Up, Caminhao Sky, etc — equivalente ao "Perfil de uso" da Veloe)
+ *   - tipoCarro → grupo   (Pick-Up, Caminhao Sky, etc)
  *   - centroCusto → operacao contém o nome do CC
  *   - data → data
- *   - grupoCarro → não aplicável (ZUQ não tem tipo de frota); ignorado
+ *   - combustivel → não aplicável (ZUQ não tem combustível por dia); ignorado
  */
-export function applyFiltersOcioso(
-  rows: import('./types').OciosoDia[],
-  f: FilterState,
-): import('./types').OciosoDia[] {
+export function applyFiltersOcioso(rows: OciosoDia[], f: FilterState): OciosoDia[] {
   return rows.filter((o) => {
     if (f.gerente.length > 0 && !f.gerente.includes(o.gerente)) return false;
     if (f.tipoCarro.length > 0 && !f.tipoCarro.includes(o.grupo)) return false;
     if (f.centroCusto.length > 0) {
-      // operacao formato "141020202 - Multiservicos Itapaje"
-      // filtro tem o nome do CC ou similar; checa se algum filtro está na operação
       const op = o.operacao.toLowerCase();
       const match = f.centroCusto.some((cc) => op.includes(cc.toLowerCase()));
       if (!match) return false;
