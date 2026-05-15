@@ -3,7 +3,7 @@ import { useData } from '@/contexts/DataContext';
 import { useFilters } from '@/contexts/FiltersContext';
 import { applyFilters } from '@/lib/filters';
 import { onlyCombustivel } from '@/lib/data';
-import { brlCompact, num, unique } from '@/lib/utils';
+import { num, unique } from '@/lib/utils';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 import { activeFilterCount } from '@/lib/filters';
 import type { Transacao } from '@/lib/types';
@@ -79,6 +79,15 @@ function reaisPorKm(): Aggregator {
   };
 }
 
+/** Formato BRL compacto local, mais curto que o brlCompact global: "R$ 702K" / "R$ 1,82M" */
+function brlShort(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `R$ ${(n / 1_000_000).toFixed(2).replace('.', ',')}M`;
+  if (abs >= 10_000) return `R$ ${Math.round(n / 1_000)}K`;
+  if (abs >= 1_000) return `R$ ${(n / 1_000).toFixed(1).replace('.', ',')}K`;
+  return `R$ ${num(n, 0)}`;
+}
+
 interface BlocoConfig {
   id: string;
   titulo: string;
@@ -116,7 +125,7 @@ const BLOCOS: BlocoConfig[] = [
     titulo: 'Gasto (R$)',
     unidade: 'R$',
     agg: sumValor('valorTotal'),
-    format: (v) => brlCompact(v),
+    format: (v) => brlShort(v),
   },
   {
     id: 'rkm',
@@ -215,65 +224,67 @@ function PivotTable({
   return (
     <div className="flex-1 min-w-0">
       <div className="text-xs font-semibold text-slate-700 mb-2 px-1">{titulo}</div>
-      <table className="w-full text-[11px] tabular-nums table-fixed">
-        <thead>
-          <tr className="bg-slate-100 text-slate-700">
-            <th className="text-left px-2 py-1.5 font-semibold w-[130px]">Tipo</th>
-            {pivot.meses.map((m) => (
-              <th key={m} className="text-right px-2 py-1.5 font-semibold">
-                <div>{mesLabel(m)}</div>
-                <div className="text-[9px] font-normal text-slate-400">{bloco.unidade}</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px] tabular-nums">
+          <thead>
+            <tr className="bg-slate-100 text-slate-700">
+              <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Tipo</th>
+              {pivot.meses.map((m) => (
+                <th key={m} className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">
+                  <div>{mesLabel(m)}</div>
+                  <div className="text-[9px] font-normal text-slate-400">{bloco.unidade}</div>
+                </th>
+              ))}
+              <th className="text-right px-2 py-1.5 font-semibold bg-amber-100 text-amber-900 whitespace-nowrap">
+                Gap
               </th>
-            ))}
-            <th className="text-right px-2 py-1.5 font-semibold bg-amber-100 text-amber-900 w-[80px]">
-              Gap
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {tiposOrdenados.map((tipo) => {
-            const gap = calcGap(pivot.cells, tipo, pivot.meses);
-            return (
-              <tr key={tipo} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="text-left px-2 py-1 font-medium text-slate-800 truncate" title={tipo}>
-                  {tipo}
+            </tr>
+          </thead>
+          <tbody>
+            {tiposOrdenados.map((tipo) => {
+              const gap = calcGap(pivot.cells, tipo, pivot.meses);
+              return (
+                <tr key={tipo} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="text-left px-2 py-1 font-medium text-slate-800 whitespace-nowrap">
+                    {tipo}
+                  </td>
+                  {pivot.meses.map((m) => {
+                    const v = pivot.cells.get(`${tipo}|${m}`) || 0;
+                    const display = bloco.emptyOnZero && v === 0 ? '—' : bloco.format(v);
+                    return (
+                      <td key={m} className="text-right px-2 py-1 text-slate-700 whitespace-nowrap">
+                        {display}
+                      </td>
+                    );
+                  })}
+                  <td className={[
+                    'text-right px-2 py-1 font-semibold bg-amber-50 whitespace-nowrap',
+                    gap > 0 ? 'text-emerald-700' : gap < 0 ? 'text-red-700' : 'text-amber-900',
+                  ].join(' ')}>
+                    {gap === 0 ? '—' : bloco.format(gap)}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+              <td className="text-left px-2 py-1.5 whitespace-nowrap">Total</td>
+              {pivot.meses.map((m) => (
+                <td key={m} className="text-right px-2 py-1.5 whitespace-nowrap">
+                  {bloco.format(pivot.totaisPorMes.get(m) || 0)}
                 </td>
-                {pivot.meses.map((m) => {
-                  const v = pivot.cells.get(`${tipo}|${m}`) || 0;
-                  const display = bloco.emptyOnZero && v === 0 ? '—' : bloco.format(v);
-                  return (
-                    <td key={m} className="text-right px-2 py-1 text-slate-700 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {display}
-                    </td>
-                  );
-                })}
-                <td className={[
-                  'text-right px-2 py-1 font-semibold bg-amber-50 whitespace-nowrap overflow-hidden text-ellipsis',
-                  gap > 0 ? 'text-emerald-700' : gap < 0 ? 'text-red-700' : 'text-amber-900',
-                ].join(' ')}>
-                  {gap === 0 ? '—' : bloco.format(gap)}
-                </td>
-              </tr>
-            );
-          })}
-          <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
-            <td className="text-left px-2 py-1.5">Total</td>
-            {pivot.meses.map((m) => (
-              <td key={m} className="text-right px-2 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
-                {bloco.format(pivot.totaisPorMes.get(m) || 0)}
+              ))}
+              <td className="text-right px-2 py-1.5 bg-amber-100 text-amber-900 whitespace-nowrap">
+                {(() => {
+                  const t0 = pivot.totaisPorMes.get(pivot.meses[0]) || 0;
+                  const tN = pivot.totaisPorMes.get(pivot.meses[pivot.meses.length - 1]) || 0;
+                  const gap = tN - t0;
+                  return gap === 0 ? '—' : bloco.format(gap);
+                })()}
               </td>
-            ))}
-            <td className="text-right px-2 py-1.5 bg-amber-100 text-amber-900 whitespace-nowrap overflow-hidden text-ellipsis">
-              {(() => {
-                const t0 = pivot.totaisPorMes.get(pivot.meses[0]) || 0;
-                const tN = pivot.totaisPorMes.get(pivot.meses[pivot.meses.length - 1]) || 0;
-                const gap = tN - t0;
-                return gap === 0 ? '—' : bloco.format(gap);
-              })()}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
