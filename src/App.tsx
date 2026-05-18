@@ -39,7 +39,6 @@ function Shell() {
               <Route path="/evolucao" element={<EvolucaoSemanal />} />
               <Route path="/preco" element={<PrecoLt />} />
               <Route path="/performance" element={<PerformanceStratws />} />
-              <Route path="/resumo-gerencial" element={<ResumoGerencial />} />
               <Route path="*" element={<Navigate to="/orcamento" replace />} />
             </Routes>
           )}
