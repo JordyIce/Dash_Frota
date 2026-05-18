@@ -3,9 +3,10 @@ import { fetchAll } from '@/lib/data';
 import type { OciosoDia, Transacao } from '@/lib/types';
 
 interface DataCtx {
-  data: Transacao[];                       // Veloe com gerente já cruzado
-  ocioso: OciosoDia[];                     // Base ZUQ
-  placasGerente: Map<string, string>;      // placa → gerente
+  data: Transacao[];
+  ocioso: OciosoDia[];
+  placasGerente: Map<string, string>;
+  metasGerentes: Map<string, number>;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -18,6 +19,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Transacao[]>([]);
   const [ocioso, setOcioso] = useState<OciosoDia[]>([]);
   const [placasGerente, setPlacasGerente] = useState<Map<string, string>>(new Map());
+  const [metasGerentes, setMetasGerentes] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
@@ -26,10 +28,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const { veloe, ocioso, placasGerente } = await fetchAll();
+      const { veloe, ocioso, placasGerente, metasGerentes } = await fetchAll();
       setData(veloe);
       setOcioso(ocioso);
       setPlacasGerente(placasGerente);
+      setMetasGerentes(metasGerentes);
       setLoadedAt(new Date());
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -44,7 +47,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   return (
-    <Ctx.Provider value={{ data, ocioso, placasGerente, loading, error, reload: load, loadedAt }}>
+    <Ctx.Provider value={{ data, ocioso, placasGerente, metasGerentes, loading, error, reload: load, loadedAt }}>
       {children}
     </Ctx.Provider>
   );
