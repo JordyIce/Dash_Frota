@@ -5,14 +5,12 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 /**
  * Painel Aderência - KPI Combustivel (Google Sheets nativo).
  * Abas:
- *   - Base veloe       (gid=101845243)  → transações Veloe
- *   - Base ZUQ         (gid=1442572254) → telemetria diária + lookup placa→gerente/grupo
- *   - Track Orçamento  (gid=571916323)  → metas mensais por gerente
+ *   - Base veloe (gid=101845243)  → transações Veloe
+ *   - Base ZUQ   (gid=1442572254) → telemetria diária + lookup placa→gerente/grupo
  */
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
 const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
 const GID_OCIOSO = import.meta.env.VITE_GID_OCIOSO || '1442572254';
-const GID_METAS = import.meta.env.VITE_GID_METAS || '571916323';
 
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
@@ -38,69 +36,17 @@ export async function fetchOciosoData(): Promise<OciosoDia[]> {
   return raw.map(normalizeOciosoRow).filter((r) => r.placa);
 }
 
-/**
- * Lê as metas mensais por gerente da aba Track Orçamento.
- * Varre o CSV procurando linhas com padrão "Gerente | valor numérico grande" (>= 1000).
- * Retorna Map<nomeGerente, metaMensal>.
- */
-export async function fetchMetasGerentes(): Promise<Map<string, number>> {
-  const url = getSheetCsvUrl(SHEET_ID, GID_METAS);
-  const map = new Map<string, number>();
-  try {
-    const res = await fetch(url, { redirect: 'follow' });
-    if (!res.ok) {
-      console.warn(`Track Orçamento indisponível: HTTP ${res.status}`);
-      return map;
-    }
-    const text = await res.text();
-    const rows = parseCsv(text);
-
-    for (const row of rows) {
-      for (let i = 0; i < row.length - 1; i++) {
-        const nome = (row[i] || '').trim();
-        const valor = parseNumber(row[i + 1] || '');
-        if (
-          nome &&
-          nome.length >= 3 &&
-          nome.length <= 30 &&
-          /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 ]*$/.test(nome) &&
-          !nome.toLowerCase().includes('total') &&
-          !nome.toLowerCase().includes('gerente') &&
-          !nome.toLowerCase().includes('chave') &&
-          !nome.toLowerCase().includes('operação') &&
-          !nome.toLowerCase().includes('c.custo') &&
-          !nome.toLowerCase().includes('rgk') &&
-          valor >= 1000 &&
-          valor <= 10_000_000
-        ) {
-          if (!map.has(nome)) {
-            map.set(nome, valor);
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('Erro ao buscar metas:', e);
-  }
-  return map;
-}
-
 export async function fetchAll(): Promise<{
   veloe: Transacao[];
   ocioso: OciosoDia[];
   placasGerente: Map<string, string>;
   placasGrupo: Map<string, string>;
-  metasGerentes: Map<string, number>;
 }> {
-  const [veloeRaw, ociosoResult, metasGerentes] = await Promise.all([
+  const [veloeRaw, ociosoResult] = await Promise.all([
     fetchVeloeData(),
     fetchOciosoData().catch((e) => {
       console.warn('Base ZUQ indisponível:', e);
       return [] as OciosoDia[];
-    }),
-    fetchMetasGerentes().catch((e) => {
-      console.warn('Track Orçamento indisponível:', e);
-      return new Map<string, number>();
     }),
   ]);
 
@@ -131,7 +77,7 @@ export async function fetchAll(): Promise<{
     };
   });
 
-  return { veloe, ocioso: ociosoResult, placasGerente, placasGrupo, metasGerentes };
+  return { veloe, ocioso: ociosoResult, placasGerente, placasGrupo };
 }
 
 function normalizeVeloeRow(r: VeloeRow): Transacao {
