@@ -13,4 +13,16 @@ export default defineConfig({
     port: 5173,
     host: true,
   },
+  build: {
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          recharts: ['recharts'],
+          xlsx: ['xlsx'],
+        },
+      },
+    },
+  },
 });
