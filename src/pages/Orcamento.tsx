@@ -75,7 +75,7 @@ export function Orcamento() {
         subtitle={`Gasto de combustível · ${fmtDate(periodo.min)} → ${fmtDate(periodo.max)}`}
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
         <KpiCard
           label="Gasto Total"
           value={brl(totals.gastoTotal)}
@@ -96,13 +96,6 @@ export function Orcamento() {
           hint={`Preço médio ${brl(totals.precoMedio)}/L`}
           icon={Coins}
           tone="warn"
-        />
-        <KpiCard
-          label="Economia"
-          value={brl(totals.economia)}
-          hint="Total economizado"
-          icon={TrendingDown}
-          tone="good"
         />
       </div>
 
