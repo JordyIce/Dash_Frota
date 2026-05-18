@@ -83,9 +83,11 @@ export async function fetchAll(): Promise<{
 }
 
 function normalizeVeloeRow(r: VeloeRow): Transacao {
-  const dataStr = r['Data/ Hora'] || '';
-  const horaStr = r['Hora'] || '';
-  const dataHoraCombinada = horaStr ? `${dataStr} ${horaStr}` : dataStr;
+  const dataStr = (r['Data/ Hora'] || '').trim();
+  const horaStr = (r['Hora'] || '').trim();
+  // Se dataStr já contém horário (tem ":" depois de um espaço), não concatena horaStr de novo
+  const dataJaTemHora = /\s+\d{1,2}:\d{2}/.test(dataStr);
+  const dataHoraCombinada = dataJaTemHora || !horaStr ? dataStr : `${dataStr} ${horaStr}`;
 
   const descricaoCC = (r['Descrição'] || '').trim() || 'Sem CC';
 
