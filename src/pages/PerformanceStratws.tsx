@@ -8,13 +8,6 @@ import { Card, EmptyState, PageHeader } from '@/components/UI';
 import { activeFilterCount } from '@/lib/filters';
 import type { Transacao } from '@/lib/types';
 
-/**
- * Performance Stratws - tabelas pivot (Tipo × Mês) lado a lado.
- *   - Esquerda "Geral": IGNORA todos os filtros — mostra a base inteira como baseline fixo
- *   - Direita: respeita TODOS os filtros (data, gerente, tipo carro, combustível)
- * 5 blocos: KM rodado, Consumo (KM/L), Volume (L), R$, R$/KM.
- */
-
 const MESES_NOMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
@@ -79,13 +72,22 @@ function reaisPorKm(): Aggregator {
   };
 }
 
-/** Formato BRL compacto local, mais curto que o brlCompact global: "R$ 702K" / "R$ 1,82M" */
+/** Formato BRL compacto local: "R$ 702K" / "R$ 1,82M" */
 function brlShort(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `R$ ${(n / 1_000_000).toFixed(2).replace('.', ',')}M`;
   if (abs >= 10_000) return `R$ ${Math.round(n / 1_000)}K`;
   if (abs >= 1_000) return `R$ ${(n / 1_000).toFixed(1).replace('.', ',')}K`;
   return `R$ ${num(n, 0)}`;
+}
+
+/** Formato numérico compacto sem prefixo: "702K" / "1,82M" — pra KM e Volume */
+function numShort(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace('.', ',')}M`;
+  if (abs >= 10_000) return `${Math.round(n / 1_000)}K`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(1).replace('.', ',')}K`;
+  return num(n, 0);
 }
 
 interface BlocoConfig {
@@ -103,7 +105,7 @@ const BLOCOS: BlocoConfig[] = [
     titulo: 'KM Rodado',
     unidade: 'KM rodado',
     agg: sumKm,
-    format: (v) => num(v, 0),
+    format: (v) => numShort(v),
   },
   {
     id: 'consumo',
@@ -118,7 +120,7 @@ const BLOCOS: BlocoConfig[] = [
     titulo: 'Volume (Litros)',
     unidade: 'Volume',
     agg: sumValor('qtdMercadoria'),
-    format: (v) => num(v, 0),
+    format: (v) => numShort(v),
   },
   {
     id: 'reais',
@@ -235,7 +237,7 @@ function PivotTable({
                   <div className="text-[9px] font-normal text-slate-400">{bloco.unidade}</div>
                 </th>
               ))}
-              <th className="text-right px-2 py-1.5 font-semibold bg-amber-100 text-amber-900 whitespace-nowrap">
+              <th className="text-right pl-3 pr-4 py-1.5 font-semibold bg-amber-100 text-amber-900 whitespace-nowrap">
                 Gap
               </th>
             </tr>
@@ -245,7 +247,7 @@ function PivotTable({
               const gap = calcGap(pivot.cells, tipo, pivot.meses);
               return (
                 <tr key={tipo} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="text-left px-2 py-1 font-medium text-slate-800 whitespace-nowrap">
+                  <td className="text-left px-2 py-1 font-medium text-slate-800 whitespace-nowrap" title={tipo}>
                     {tipo}
                   </td>
                   {pivot.meses.map((m) => {
@@ -258,7 +260,7 @@ function PivotTable({
                     );
                   })}
                   <td className={[
-                    'text-right px-2 py-1 font-semibold bg-amber-50 whitespace-nowrap',
+                    'text-right pl-3 pr-4 py-1 font-semibold bg-amber-50 whitespace-nowrap',
                     gap > 0 ? 'text-emerald-700' : gap < 0 ? 'text-red-700' : 'text-amber-900',
                   ].join(' ')}>
                     {gap === 0 ? '—' : bloco.format(gap)}
@@ -273,7 +275,7 @@ function PivotTable({
                   {bloco.format(pivot.totaisPorMes.get(m) || 0)}
                 </td>
               ))}
-              <td className="text-right px-2 py-1.5 bg-amber-100 text-amber-900 whitespace-nowrap">
+              <td className="text-right pl-3 pr-4 py-1.5 bg-amber-100 text-amber-900 whitespace-nowrap">
                 {(() => {
                   const t0 = pivot.totaisPorMes.get(pivot.meses[0]) || 0;
                   const tN = pivot.totaisPorMes.get(pivot.meses[pivot.meses.length - 1]) || 0;
@@ -293,10 +295,7 @@ export function PerformanceStratws() {
   const { data } = useData();
   const { filters } = useFilters();
 
-  // Esquerda: TUDO, sem filtros — baseline fixo
   const baseGeral = useMemo(() => onlyCombustivel(data), [data]);
-
-  // Direita: aplica todos os filtros
   const baseFiltrada = useMemo(() => {
     return onlyCombustivel(applyFilters(data, filters));
   }, [data, filters]);
