@@ -23,7 +23,8 @@ const ABA_VELOE = import.meta.env.VITE_ABA_VELOE || 'Base veloe';
 const ABA_OCIOSO = import.meta.env.VITE_ABA_OCIOSO || 'Base ZUQ';
 
 function getXlsxUrl(fileId: string): string {
-  return `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`;
+  // Usa nosso proxy serverless (api/xlsx.ts) pra contornar CORS do Drive
+  return `/api/xlsx?id=${fileId}`;
 }
 
 let cachedWorkbook: XLSX.WorkBook | null = null;
