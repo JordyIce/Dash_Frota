@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LabelList,
 } from 'recharts';
-import { Wallet, Fuel, Coins, TrendingDown } from 'lucide-react';
+import { Wallet, Fuel, Coins } from 'lucide-react';
 import { KpiCard } from '@/components/KpiCard';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 
