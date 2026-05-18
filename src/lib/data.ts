@@ -1,38 +1,82 @@
-import { parseCsv, csvToObjects } from './csv';
+import * as XLSX from 'xlsx';
 import { parseDate, parseNumber } from './utils';
 import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 
 /**
- * Tudo numa planilha só: "Painel Aderência - KPI Combustivel".
- * Abas usadas:
- *   - Base veloe (gid=101845243)  → transações Veloe
- *   - Base ZUQ   (gid=1442572254) → telemetria diária + fonte canônica de Gerente e Tipo de Carro
+ * Baixa o XLSX "Painel Aderência - KPI Combustivel.xlsx" direto do Google Drive,
+ * parsea localmente com SheetJS, e extrai as abas usadas pelo dashboard.
+ *
+ * Workflow do pessoal da frota:
+ *  - Substituir o arquivo XLSX no Drive usando "Gerenciar versões" (preserva o ID)
+ *  - Em até 5 minutos os dados atualizados aparecem (botão "Atualizar agora" força)
+ *
+ * Requisitos:
+ *  - O arquivo precisa ter permissão "Qualquer pessoa com link pode ver"
+ *  - Variáveis de ambiente:
+ *      VITE_XLSX_FILE_ID    → ID do arquivo XLSX no Drive
+ *      VITE_ABA_VELOE       → nome da aba Veloe (default: "Base veloe")
+ *      VITE_ABA_OCIOSO      → nome da aba ZUQ (default: "Base ZUQ")
  */
-const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
-const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
-const GID_OCIOSO = import.meta.env.VITE_GID_OCIOSO || '1442572254';
 
-export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
-  return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+const FILE_ID = import.meta.env.VITE_XLSX_FILE_ID || '';
+const ABA_VELOE = import.meta.env.VITE_ABA_VELOE || 'Base veloe';
+const ABA_OCIOSO = import.meta.env.VITE_ABA_OCIOSO || 'Base ZUQ';
+
+function getXlsxUrl(fileId: string): string {
+  return `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`;
+}
+
+let cachedWorkbook: XLSX.WorkBook | null = null;
+let cachedAt: number = 0;
+
+async function loadWorkbook(): Promise<XLSX.WorkBook> {
+  if (!FILE_ID) {
+    throw new Error('VITE_XLSX_FILE_ID não configurado. Defina nas env vars do Vercel.');
+  }
+
+  // Cache em memória de 5 min (caso o usuário navegue entre páginas)
+  const agora = Date.now();
+  if (cachedWorkbook && agora - cachedAt < 5 * 60 * 1000) {
+    return cachedWorkbook;
+  }
+
+  const url = getXlsxUrl(FILE_ID);
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) {
+    throw new Error(`Falha ao baixar XLSX: HTTP ${res.status}. Verifique se o arquivo é público.`);
+  }
+
+  const buffer = await res.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, cellNF: false });
+
+  cachedWorkbook = workbook;
+  cachedAt = agora;
+  return workbook;
+}
+
+export function invalidateCache() {
+  cachedWorkbook = null;
+  cachedAt = 0;
 }
 
 export async function fetchVeloeData(): Promise<Transacao[]> {
-  const url = getSheetCsvUrl(SHEET_ID, GID_VELOE);
-  const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`Falha na Base veloe: HTTP ${res.status}`);
-  const text = await res.text();
-  const rows = parseCsv(text);
-  const raw = csvToObjects<VeloeRow>(rows, { skipRows: 1 });
+  const workbook = await loadWorkbook();
+  const sheet = workbook.Sheets[ABA_VELOE];
+  if (!sheet) {
+    throw new Error(`Aba "${ABA_VELOE}" não encontrada. Abas: ${workbook.SheetNames.join(', ')}`);
+  }
+  const raw = XLSX.utils.sheet_to_json<VeloeRow>(sheet, { range: 0, defval: '', raw: false });
   return raw.map(normalizeVeloeRow).filter((t) => t.placa);
 }
 
 export async function fetchOciosoData(): Promise<OciosoDia[]> {
-  const url = getSheetCsvUrl(SHEET_ID, GID_OCIOSO);
-  const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`Falha na Base ZUQ: HTTP ${res.status}`);
-  const text = await res.text();
-  const rows = parseCsv(text);
-  const raw = csvToObjects<OciosoRow>(rows, { skipRows: 1 });
+  const workbook = await loadWorkbook();
+  const sheet = workbook.Sheets[ABA_OCIOSO];
+  if (!sheet) {
+    throw new Error(`Aba "${ABA_OCIOSO}" não encontrada. Abas: ${workbook.SheetNames.join(', ')}`);
+  }
+  // Base ZUQ: linha 1 é vazia/junk, header na linha 2 (index 1)
+  const raw = XLSX.utils.sheet_to_json<OciosoRow>(sheet, { range: 1, defval: '', raw: false });
   return raw.map(normalizeOciosoRow).filter((r) => r.placa);
 }
 
@@ -42,14 +86,26 @@ export async function fetchAll(): Promise<{
   placasGerente: Map<string, string>;
   placasGrupo: Map<string, string>;
 }> {
-  const [veloeRaw, ociosoResult] = await Promise.all([
-    fetchVeloeData(),
-    fetchOciosoData().catch((e) => {
-      console.warn('Base ZUQ indisponível:', e);
-      return [] as OciosoDia[];
-    }),
-  ]);
+  const workbook = await loadWorkbook();
 
+  const veloeSheet = workbook.Sheets[ABA_VELOE];
+  if (!veloeSheet) {
+    throw new Error(`Aba "${ABA_VELOE}" não encontrada. Abas: ${workbook.SheetNames.join(', ')}`);
+  }
+  const veloeRaw = XLSX.utils
+    .sheet_to_json<VeloeRow>(veloeSheet, { range: 0, defval: '', raw: false })
+    .map(normalizeVeloeRow)
+    .filter((t) => t.placa);
+
+  const ociosoSheet = workbook.Sheets[ABA_OCIOSO];
+  const ociosoResult = ociosoSheet
+    ? XLSX.utils
+        .sheet_to_json<OciosoRow>(ociosoSheet, { range: 1, defval: '', raw: false })
+        .map(normalizeOciosoRow)
+        .filter((r) => r.placa)
+    : [];
+
+  // Lookups placa→gerente e placa→grupo a partir da ZUQ
   const placasGerente = new Map<string, string>();
   const placasGrupo = new Map<string, string>();
   const ultimaDataPorPlaca = new Map<string, number>();
@@ -91,7 +147,6 @@ function normalizeVeloeRow(r: VeloeRow): Transacao {
   const gerenteFinal = gerenteRaw && gerenteRaw !== 'Outros' ? gerenteRaw : descricaoCC;
 
   const categoriaVeiculo = (r['Para'] || '').trim() || (r['Perfil de uso'] || '').trim();
-
   const combustivel = (r['Tipo'] || '').trim();
 
   return {
@@ -166,7 +221,6 @@ function normalizeOciosoRow(r: OciosoRow): OciosoDia {
   };
 }
 
-/** Helper: só transações de combustível (descarta Arla, lubrificantes etc) */
 export function onlyCombustivel(rows: Transacao[]): Transacao[] {
   return rows.filter((t) => t.tipoMercadoria === 'Combustível');
 }
