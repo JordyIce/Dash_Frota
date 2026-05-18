@@ -14,6 +14,7 @@ import { Condutores } from '@/pages/Condutores';
 import { MotorOcioso } from '@/pages/MotorOcioso';
 import { EvolucaoSemanal } from '@/pages/EvolucaoSemanal';
 import { PrecoLt } from '@/pages/PrecoLt';
+import { PerformanceStratws } from '@/pages/PerformanceStratws';
 import { ResumoGerencial } from '@/pages/ResumoGerencial';
 
 function Shell() {
