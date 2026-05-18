@@ -10,7 +10,6 @@ import {
   Tag,
   Truck,
   LayoutGrid,
-  Target,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
