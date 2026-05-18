@@ -1,14 +1,16 @@
 /**
  * Serverless function que faz proxy do XLSX do Google Drive.
  * Resolve CORS: navegador → vercel/api/xlsx → Google Drive
- * (Vercel é servidor, então o Drive não bloqueia o download)
  *
- * Variáveis de ambiente:
- *  VITE_XLSX_FILE_ID (mesma do front; também lida pelo backend)
+ * Runtime Node (não Edge) pra ter timeout maior (60s no Hobby vs 25s no Edge).
+ * Faz streaming em vez de buffer pra responder mais rápido e usar menos memória.
  */
 
+export const config = {
+  maxDuration: 60, // 60s no plano Hobby
+};
+
 export default async function handler(req: Request) {
-  // Permite GET com fileId via query ?id=... ou usa env var
   const url = new URL(req.url);
   const fileId =
     url.searchParams.get('id') ||
@@ -29,7 +31,6 @@ export default async function handler(req: Request) {
     const driveRes = await fetch(driveUrl, {
       redirect: 'follow',
       headers: {
-        // Faz request "como navegador" pra evitar problemas
         'User-Agent': 'Mozilla/5.0 (compatible; DashFrota/1.0)',
       },
     });
@@ -44,10 +45,8 @@ export default async function handler(req: Request) {
       );
     }
 
-    const buffer = await driveRes.arrayBuffer();
-
-    // Devolve o XLSX binário com cache curto (5min) pra reduzir carga
-    return new Response(buffer, {
+    // Stream direto do Drive pro cliente (sem buffer intermediário)
+    return new Response(driveRes.body, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
