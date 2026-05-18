@@ -7,10 +7,6 @@
  *  VITE_XLSX_FILE_ID (mesma do front; também lida pelo backend)
  */
 
-export const config = {
-  runtime: 'edge',
-};
-
 export default async function handler(req: Request) {
   // Permite GET com fileId via query ?id=... ou usa env var
   const url = new URL(req.url);
