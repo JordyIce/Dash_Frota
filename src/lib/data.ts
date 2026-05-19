@@ -7,10 +7,12 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
  * Abas:
  *   - Base veloe (gid=101845243)  → transações Veloe
  *   - Base ZUQ   (gid=1442572254) → telemetria diária + lookup placa→gerente/grupo
+ *   - Motorista  (gid=1011349077) → lookup CPF→Nome canônico do motorista
  */
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
 const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
 const GID_OCIOSO = import.meta.env.VITE_GID_OCIOSO || '1442572254';
+const GID_MOTORISTAS = import.meta.env.VITE_GID_MOTORISTAS || '1011349077';
 
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
@@ -43,17 +45,57 @@ export async function fetchOciosoData(): Promise<OciosoDia[]> {
   return raw.map((r) => normalizeOciosoRow(r, fmtData)).filter((r) => r.placa);
 }
 
+/**
+ * Lê a aba "Motorista" (gid=1011349077) com pares CPF→Nome canônico.
+ * Estrutura: coluna A = CPF, coluna B = Nome. Header na linha 1.
+ * Retorna Map<cpfNormalizado, nomeCorreto>.
+ *
+ * Normaliza o CPF removendo pontos/hífens pra garantir match com qualquer formato.
+ */
+export async function fetchMotoristas(): Promise<Map<string, string>> {
+  const url = getSheetCsvUrl(SHEET_ID, GID_MOTORISTAS);
+  const map = new Map<string, string>();
+  try {
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) {
+      console.warn(`Aba Motorista indisponível: HTTP ${res.status}`);
+      return map;
+    }
+    const text = await res.text();
+    const rows = parseCsv(text);
+    // skipRows: 1 = pula o header da linha 1
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const cpfRaw = (row[0] || '').trim();
+      const nome = (row[1] || '').trim();
+      if (!cpfRaw || !nome) continue;
+      // Normaliza CPF: só dígitos
+      const cpfNormalizado = cpfRaw.replace(/\D/g, '');
+      if (cpfNormalizado.length < 8) continue;
+      map.set(cpfNormalizado, nome);
+    }
+    console.log(`[Motorista] ${map.size} motoristas carregados.`);
+  } catch (e) {
+    console.warn('Erro ao buscar Motoristas:', e);
+  }
+  return map;
+}
+
 export async function fetchAll(): Promise<{
   veloe: Transacao[];
   ocioso: OciosoDia[];
   placasGerente: Map<string, string>;
   placasGrupo: Map<string, string>;
 }> {
-  const [veloeRaw, ociosoResult] = await Promise.all([
+  const [veloeRaw, ociosoResult, motoristasMap] = await Promise.all([
     fetchVeloeData(),
     fetchOciosoData().catch((e) => {
       console.warn('Base ZUQ indisponível:', e);
       return [] as OciosoDia[];
+    }),
+    fetchMotoristas().catch((e) => {
+      console.warn('Aba Motorista indisponível:', e);
+      return new Map<string, string>();
     }),
   ]);
 
@@ -78,10 +120,15 @@ export async function fetchAll(): Promise<{
     const placaUC = (t.placa || '').toUpperCase();
     const gerenteZuq = placasGerente.get(placaUC);
     const grupoZuq = placasGrupo.get(placaUC);
+    // Cruza nome do motorista: se o CPF tá na aba Motorista, usa o nome canônico de lá.
+    // Caso contrário, mantém o nome que veio na Base veloe.
+    const cpfNormalizado = (t.cpfMotorista || '').replace(/\D/g, '');
+    const nomeCanonico = cpfNormalizado ? motoristasMap.get(cpfNormalizado) : undefined;
     return {
       ...t,
       gerente: gerenteZuq || t.gerente,
       categoriaVeiculo: grupoZuq || t.categoriaVeiculo,
+      motorista: nomeCanonico || t.motorista,
     };
   });
 
