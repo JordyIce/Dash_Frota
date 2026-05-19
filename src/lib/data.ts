@@ -1,5 +1,5 @@
 import { parseCsv, csvToObjects } from './csv';
-import { parseDate, parseNumber } from './utils';
+import { parseDate, parseNumber, detectDateFormat, type DateFormat } from './utils';
 import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 
 /**
@@ -23,7 +23,11 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   const text = await res.text();
   const rows = parseCsv(text);
   const raw = csvToObjects<VeloeRow>(rows, { skipRows: 1 });
-  return raw.map(normalizeVeloeRow).filter((t) => t.placa);
+  // Detecta se as datas estão em DD/MM ou MM/DD analisando o conjunto inteiro
+  const amostras = raw.map((r) => r['Data'] || r['Data/ Hora'] || '').filter(Boolean);
+  const fmtData = detectDateFormat(amostras);
+  console.log(`[Veloe] Formato de data detectado: ${fmtData.toUpperCase()}`);
+  return raw.map((r) => normalizeVeloeRow(r, fmtData)).filter((t) => t.placa);
 }
 
 export async function fetchOciosoData(): Promise<OciosoDia[]> {
@@ -33,7 +37,10 @@ export async function fetchOciosoData(): Promise<OciosoDia[]> {
   const text = await res.text();
   const rows = parseCsv(text);
   const raw = csvToObjects<OciosoRow>(rows, { skipRows: 1 });
-  return raw.map(normalizeOciosoRow).filter((r) => r.placa);
+  const amostras = raw.map((r) => r['Data'] || '').filter(Boolean);
+  const fmtData = detectDateFormat(amostras);
+  console.log(`[ZUQ] Formato de data detectado: ${fmtData.toUpperCase()}`);
+  return raw.map((r) => normalizeOciosoRow(r, fmtData)).filter((r) => r.placa);
 }
 
 export async function fetchAll(): Promise<{
@@ -50,6 +57,7 @@ export async function fetchAll(): Promise<{
     }),
   ]);
 
+  // Lookups placa→gerente e placa→grupo a partir da ZUQ
   const placasGerente = new Map<string, string>();
   const placasGrupo = new Map<string, string>();
   const ultimaDataPorPlaca = new Map<string, number>();
@@ -80,7 +88,7 @@ export async function fetchAll(): Promise<{
   return { veloe, ocioso: ociosoResult, placasGerente, placasGrupo };
 }
 
-function normalizeVeloeRow(r: VeloeRow): Transacao {
+function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy'): Transacao {
   // Ignora coluna de horário (Hora/Horas) — não usamos pra nada nas análises,
   // e algumas linhas vêm com valores corrompidos que quebram o parseDate.
   // Pega só a data (suporta ambos cabeçalhos: "Data" novo ou "Data/ Hora" antigo).
@@ -114,7 +122,7 @@ function normalizeVeloeRow(r: VeloeRow): Transacao {
     matriculaMotorista: r['Matrícula Motorista'] || '',
     gerente: gerenteFinal,
 
-    dataTransacao: parseDate(dataHoraCombinada),
+    dataTransacao: parseDate(dataHoraCombinada, fmtData),
     dataPostagem: null,
 
     nomeEC: r['Nome EC'] || '',
@@ -148,9 +156,9 @@ function normalizeVeloeRow(r: VeloeRow): Transacao {
   };
 }
 
-function normalizeOciosoRow(r: OciosoRow): OciosoDia {
+function normalizeOciosoRow(r: OciosoRow, fmtData: DateFormat = 'mdy'): OciosoDia {
   return {
-    data: parseDate(r['Data']),
+    data: parseDate(r['Data'], fmtData),
     placa: (r['Veículo'] || '').toUpperCase().trim(),
     distanciaKm: parseNumber(r['Distância(km)']),
     ligadoMin: parseNumber(r['Ligado(min)']),
