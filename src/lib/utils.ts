@@ -1,57 +1,87 @@
-/**
- * Helpers de formatação e parsing.
- * Todos os números vêm como string do Sheets (formato pt-BR: "5,99" ou "1,234.56" dependendo da config).
- */
+import type { FilterState } from './types';
 
-/** Parse número aceitando "5,99", "5.99", "1.234,56", "1,234.56", "", "-". */
+/** Parse numérico que aceita "1.234,56" e "1,234.56" */
 export function parseNumber(v: string | number | null | undefined): number {
   if (v === null || v === undefined) return 0;
-  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  if (typeof v === 'number') return isNaN(v) ? 0 : v;
   let s = String(v).trim();
-  if (s === '' || s === '-' || s.toLowerCase() === 'n/a') return 0;
+  if (s === '' || s === '-' || s === '#N/A' || s === '#REF!' || s === '#VALOR!') return 0;
+  // Remove R$, %, espaços, etc.
+  s = s.replace(/[R$\s%]/g, '');
 
-  // remove espaços e símbolos comuns
-  s = s.replace(/\s/g, '').replace(/R\$/gi, '');
+  const hasComma = s.includes(',');
+  const hasDot = s.includes('.');
 
-  // detecta formato: se tem vírgula E ponto, o último separador é o decimal
-  const lastComma = s.lastIndexOf(',');
-  const lastDot = s.lastIndexOf('.');
-
-  if (lastComma === -1 && lastDot === -1) {
-    const n = Number(s);
-    return isFinite(n) ? n : 0;
+  if (hasComma && hasDot) {
+    // Decide qual é decimal pelo último símbolo
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+      // formato BR: 1.234,56
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      // formato US: 1,234.56
+      s = s.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    // só vírgula: assume decimal BR (1234,56 → 1234.56)
+    s = s.replace(',', '.');
   }
+  // só ponto: já é decimal
 
-  if (lastComma > lastDot) {
-    // formato pt-BR: 1.234,56 → 1234.56
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else {
-    // formato en-US: 1,234.56 → 1234.56
-    s = s.replace(/,/g, '');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Deduplica array preservando ordem */
+export function unique<T>(arr: T[]): T[] {
+  const seen = new Set<T>();
+  const out: T[] = [];
+  for (const x of arr) {
+    if (!seen.has(x)) {
+      seen.add(x);
+      out.push(x);
+    }
   }
-  const n = Number(s);
-  return isFinite(n) ? n : 0;
+  return out;
+}
+
+/** Pequena utilitária pra somar */
+export function sum(arr: number[]): number {
+  let s = 0;
+  for (const x of arr) s += x;
+  return s;
 }
 
 /**
- * Parse data.
- *
- * IMPORTANTE: o Google Sheets quando exportado via `/export?format=csv` muitas vezes
- * serializa datas no formato AMERICANO `M/D/YY` ou `M/D/YYYY` mesmo quando a célula
- * é exibida como DD/MM/YYYY na interface. Isso depende da locale do contrato Google.
- * Confirmado para o B&Q: célula mostra "5/10/26 11:04" mas a barra de fórmulas
- * mostra "5/10/2026 11:04:44" — ou seja, mês = 5 (maio), dia = 10.
- *
- * Estratégia: quando vier no formato `N/N/N[ HH:MM[:SS]]`:
- *   - Se primeiro número > 12 → tem que ser DD/MM (americano não pode ter dia > 12 no mês)
- *   - Se segundo número > 12 → tem que ser MM/DD (americano)
- *   - Se ambos <= 12 (ambíguo) → DEFAULT MM/DD/YYYY (Sheets export)
- *
- * Também aceita ISO `YYYY-MM-DD ...` sem ambiguidade.
- *
- * Retorna null se inválido.
+ * Tipo de formato de data quando ambíguo (ambos números <= 12).
+ *  - 'mdy' → MM/DD/YYYY (americano, default do Google Sheets CSV export)
+ *  - 'dmy' → DD/MM/YYYY (brasileiro)
  */
-export function parseDate(v: string | null | undefined): Date | null {
+export type DateFormat = 'auto' | 'mdy' | 'dmy';
+
+/**
+ * Detecta o formato dominante (DD/MM ou MM/DD) varrendo uma lista de strings de data.
+ * Conta quantas têm evidência inequívoca (primeiro > 12 → DMY, segundo > 12 → MDY)
+ * e retorna o vencedor. Empate ou nada decisivo → 'mdy' (default Google Sheets).
+ */
+export function detectDateFormat(samples: (string | null | undefined)[]): DateFormat {
+  let dmyVotes = 0;
+  let mdyVotes = 0;
+  for (const v of samples) {
+    if (!v) continue;
+    const s = String(v).trim();
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/\d{2,4}/);
+    if (!m) continue;
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    if (a > 12 && b <= 12) dmyVotes++;
+    else if (b > 12 && a <= 12) mdyVotes++;
+  }
+  if (dmyVotes > mdyVotes) return 'dmy';
+  if (mdyVotes > dmyVotes) return 'mdy';
+  return 'mdy';
+}
+
+export function parseDate(v: string | null | undefined, fmt: DateFormat = 'mdy'): Date | null {
   if (!v) return null;
   const s = String(v).trim();
   if (s === '') return null;
@@ -76,20 +106,26 @@ export function parseDate(v: string | null | undefined): Date | null {
     let day: number;
     let month: number;
     if (a > 12 && b <= 12) {
-      // primeiro número é dia (DD/MM/YYYY)
+      // primeiro número é dia (DD/MM/YYYY) — inequívoco
       day = a;
       month = b - 1;
     } else if (b > 12 && a <= 12) {
-      // segundo número é dia (MM/DD/YYYY)
+      // segundo número é dia (MM/DD/YYYY) — inequívoco
       month = a - 1;
       day = b;
     } else if (a > 12 && b > 12) {
       // impossível em qualquer formato
       return null;
     } else {
-      // ambos <= 12: ambíguo. DEFAULT MM/DD/YYYY (Google Sheets CSV export)
-      month = a - 1;
-      day = b;
+      // ambos <= 12: ambíguo. Usa o formato informado.
+      if (fmt === 'dmy') {
+        day = a;
+        month = b - 1;
+      } else {
+        // 'mdy' (default) ou 'auto' não resolvido cai aqui
+        month = a - 1;
+        day = b;
+      }
     }
 
     const d = new Date(year, month, day, hour, min, sec);
@@ -110,38 +146,32 @@ export function brl(n: number): string {
   }).format(n);
 }
 
-/** Format BRL compacto — R$ 1,2 mil / R$ 1,2 mi */
+/** BRL compacto pra valores grandes (R$ 1,2 mi / R$ 850 mil) */
 export function brlCompact(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `R$ ${(n / 1_000_000).toFixed(2).replace('.', ',')} mi`;
-  if (abs >= 1_000) return `R$ ${(n / 1_000).toFixed(1).replace('.', ',')} mil`;
+  if (abs >= 1_000_000) {
+    return `R$ ${(n / 1_000_000).toFixed(1).replace('.', ',')} mi`;
+  }
+  if (abs >= 1_000) {
+    return `R$ ${(n / 1_000).toFixed(1).replace('.', ',')} mil`;
+  }
   return brl(n);
 }
 
-/** Format número com casas decimais e separador pt-BR */
-export function num(n: number, decimals = 2): string {
+/** Format pt-BR pra inteiro com separador de milhar */
+export function num(n: number, casas = 0): string {
   return new Intl.NumberFormat('pt-BR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
   }).format(n);
 }
 
-/** Format inteiro com separador de milhar */
-export function int(n: number): string {
-  return new Intl.NumberFormat('pt-BR').format(Math.round(n));
-}
-
-/** Format percentual: 0.12 → "12,0%" */
-export function pct(n: number, decimals = 1): string {
-  return `${num(n * 100, decimals)}%`;
-}
-
-/** Format litros: "1.234,5 L" */
+/** Format litros — 1.234,5 L */
 export function lt(n: number): string {
   return `${num(n, 1)} L`;
 }
 
-/** Format KM/L */
+/** Format km/L */
 export function kmL(n: number): string {
   return `${num(n, 2)} km/L`;
 }
@@ -198,51 +228,47 @@ export function periodKey(d: Date, g: Granularity): string {
   return `${isoYear}-W${String(isoWeek).padStart(2, '0')}`;
 }
 
-/**
- * Cálculo ISO 8601 de número de semana e ano-semana.
- * Detalhes do algoritmo:
- *   1. Move a data pra quinta-feira da mesma semana (ISO usa quinta como "ancora")
- *   2. O ano-semana é o ano dessa quinta-feira (resolve casos onde semana cruza ano)
- *   3. Semana = ceil(((quinta - 1ºJan do ano-semana) / 7 dias) + 1)
- * Garante 1-53 (nunca 0 nem 54+).
- */
-function isoWeekOf(date: Date): { isoYear: number; isoWeek: number } {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  // ISO: dia da semana 1=segunda ... 7=domingo
-  const dayNum = d.getUTCDay() || 7;
-  // pula pra quinta-feira dessa semana ISO
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const isoYear = d.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const isoWeek = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+/** Semana ISO 8601 — usa quinta-feira como âncora */
+export function isoWeekOf(d: Date): { isoYear: number; isoWeek: number } {
+  const tmp = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  // joga pra quinta-feira da semana corrente
+  const day = (tmp.getDay() + 6) % 7; // segunda = 0, domingo = 6
+  tmp.setDate(tmp.getDate() - day + 3);
+  const isoYear = tmp.getFullYear();
+  const week1 = new Date(isoYear, 0, 4);
+  const week1Day = (week1.getDay() + 6) % 7;
+  week1.setDate(week1.getDate() - week1Day + 3);
+  const diff = tmp.getTime() - week1.getTime();
+  const isoWeek = 1 + Math.round(diff / (7 * 24 * 60 * 60 * 1000));
   return { isoYear, isoWeek };
 }
 
-/** Label legível pra um periodKey */
+/** Format label de período pra eixo de gráfico */
 export function periodLabel(key: string, g: Granularity): string {
   if (g === 'day') {
     const [y, m, d] = key.split('-');
-    return `${d}/${m}/${y.slice(2)}`;
+    return `${d}/${m}`;
+  }
+  if (g === 'week') {
+    const [, w] = key.split('-W');
+    return `Sem ${w}`;
   }
   if (g === 'month') {
-    const [y, m] = key.split('-');
-    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    return `${meses[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+    const [, m] = key.split('-');
+    const nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return nomes[parseInt(m, 10) - 1] || key;
   }
-  if (g === 'year') return key;
-  // week
-  return key.replace('-W', ' Sem ');
+  return key;
 }
 
-/** Únicos preservando ordem de aparição, sem strings vazias */
-export function unique(arr: (string | null | undefined)[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const v of arr) {
-    if (!v) continue;
-    if (seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
-  }
-  return out.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+/** Constrói FilterState vazio */
+export function emptyFilterState(): FilterState {
+  return {
+    centroCusto: [],
+    gerente: [],
+    tipoCarro: [],
+    combustivel: [],
+    dataInicio: null,
+    dataFim: null,
+  };
 }
