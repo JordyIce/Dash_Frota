@@ -81,10 +81,17 @@ export async function fetchAll(): Promise<{
 }
 
 function normalizeVeloeRow(r: VeloeRow): Transacao {
+  // Suporta ambos formatos de cabeçalho da planilha:
+  //   - Formato antigo: "Data/ Hora" + "Hora"
+  //   - Formato novo:   "Data" + "Horas"
   const dataStr = (r['Data'] || r['Data/ Hora'] || '').trim();
   const horaStr = (r['Horas'] || r['Hora'] || '').trim();
+  // Concatena hora APENAS se for um horário válido (HH:MM ou HH:MM:SS).
+  // Algumas linhas vêm com valores corrompidos (números) na coluna Hora —
+  // se concatenarmos sem validar, o parseDate retorna null e a transação desaparece.
+  const horaValida = /^\d{1,2}:\d{2}(:\d{2})?$/.test(horaStr);
   const dataJaTemHora = /\s+\d{1,2}:\d{2}/.test(dataStr);
-  const dataHoraCombinada = dataJaTemHora || !horaStr ? dataStr : `${dataStr} ${horaStr}`;
+  const dataHoraCombinada = dataJaTemHora || !horaValida ? dataStr : `${dataStr} ${horaStr}`;
 
   const descricaoCC = (r['Descrição'] || '').trim() || 'Sem CC';
 
