@@ -8,7 +8,7 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
  *   - Base veloe        (gid=101845243)  → transações Veloe
  *   - Base ZUQ          (gid=1442572254) → telemetria diária (motor ocioso, etc)
  *   - Motorista         (gid=1011349077) → lookup CPF→Nome canônico do motorista
- *   - Controle de Frota (gid=1557557647) → lookup placa→Gerente (col AG) e Tipo (col BA)
+ *   - Controle de Frota (gid=1557557647) → lookup placa→Gerente (col AG) e Tipo (col W)
  */
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
 const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
@@ -83,8 +83,18 @@ export async function fetchMotoristas(): Promise<Map<string, string>> {
 }
 
 /**
+ * Normaliza texto pra Title Case, unificando grafias diferentes do mesmo valor.
+ * Ex: "PICK-UP LEVE", "Pick-Up Leve", "pick-up leve" → todos viram "Pick-Up Leve".
+ */
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/(^|[\s\-/])([a-zà-ÿ])/g, (_, sep, ch) => sep + ch.toUpperCase());
+}
+
+/**
  * Lê a aba "Controle de Frota" (gid=1557557647).
- * Cruza por placa pra obter Gerente (coluna AG / índice 32) e Tipo de Veículo (coluna BA / índice 52).
+ * Cruza por placa pra obter Gerente (coluna AG / índice 32) e Tipo de Veículo (coluna W / índice 22).
  * Lê por POSIÇÃO (índice) porque a aba tem várias colunas chamadas "Tipo" (nome não é confiável).
  */
 export async function fetchControleFrota(): Promise<{
@@ -102,6 +112,7 @@ export async function fetchControleFrota(): Promise<{
     }
     const text = await res.text();
     const rows = parseCsv(text);
+    // Linha 1 é header — começa da linha 2 (índice 1)
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const placa = (row[COL_CONTROLE_PLACA] || '').toUpperCase().replace(/\s/g, '').trim();
@@ -109,7 +120,8 @@ export async function fetchControleFrota(): Promise<{
       const gerente = (row[COL_CONTROLE_GERENTE] || '').trim();
       const tipo = (row[COL_CONTROLE_TIPO] || '').trim();
       if (gerente) gerentePorPlaca.set(placa, gerente);
-      if (tipo) tipoPorPlaca.set(placa, tipo);
+      // Normaliza o tipo pra Title Case, unificando "PICK-UP LEVE"/"Pick-Up Leve"/etc
+      if (tipo) tipoPorPlaca.set(placa, titleCase(tipo));
     }
     console.log(`[Controle de Frota] ${gerentePorPlaca.size} placas com gerente, ${tipoPorPlaca.size} com tipo.`);
   } catch (e) {
@@ -162,14 +174,16 @@ export async function fetchAll(): Promise<{
   // Aplica Controle de Frota também na ZUQ (pra página Motor Ocioso ter gerente/tipo consistentes)
   const ocioso = ociosoResult.map((o) => {
     const placaUC = (o.placa || '').toUpperCase().replace(/\s/g, '');
+    const tipoFinal = tipoPorPlaca.get(placaUC) || o.grupo;
     return {
       ...o,
       gerente: gerentePorPlaca.get(placaUC) || o.gerente,
-      grupo: tipoPorPlaca.get(placaUC) || o.grupo,
+      grupo: tipoFinal ? titleCase(tipoFinal) : tipoFinal,
     };
   });
 
   const veloe = veloeRaw.map((t) => {
+    // Placa normalizada (UPPERCASE, sem espaços) pra cruzar com Controle de Frota
     const placaUC = (t.placa || '').toUpperCase().replace(/\s/g, '');
 
     // GERENTE e TIPO: fonte primária = Controle de Frota (por placa).
@@ -183,10 +197,13 @@ export async function fetchAll(): Promise<{
     const cpfNormalizado = (t.cpfMotorista || '').replace(/\D/g, '');
     const nomeCanonico = cpfNormalizado ? motoristasMap.get(cpfNormalizado) : undefined;
 
+    // Tipo final, sempre normalizado pra Title Case (unifica grafias de fontes diferentes)
+    const tipoFinal = tipoControle || grupoZuq || t.categoriaVeiculo;
+
     return {
       ...t,
       gerente: gerenteControle || gerenteZuq || t.gerente,
-      categoriaVeiculo: tipoControle || grupoZuq || t.categoriaVeiculo,
+      categoriaVeiculo: tipoFinal ? titleCase(tipoFinal) : tipoFinal,
       motorista: nomeCanonico || t.motorista,
     };
   });
@@ -195,6 +212,9 @@ export async function fetchAll(): Promise<{
 }
 
 function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy'): Transacao {
+  // Ignora coluna de horário (Hora/Horas) — não usamos pra nada nas análises,
+  // e algumas linhas vêm com valores corrompidos que quebram o parseDate.
+  // Pega só a data (suporta ambos cabeçalhos: "Data" novo ou "Data/ Hora" antigo).
   const dataStr = (r['Data'] || r['Data/ Hora'] || '').trim();
   const dataHoraCombinada = dataStr;
 
