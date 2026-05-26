@@ -6,6 +6,17 @@ import { onlyCombustivel } from '@/lib/data';
 import { num, fmtDate } from '@/lib/utils';
 import { Card, EmptyState, PageHeader } from '@/components/UI';
 
+/**
+ * Ranking KM/L - Top piores em consumo.
+ * Inspirado na aba "Performance Stratws" da Painel Aderência (gid=836290110).
+ *
+ * Tabela única ordenada por % consumo (pior primeiro). Use o filtro global
+ * "Tipo do Carro" pra restringir a uma categoria específica.
+ *
+ * Colunas: RKg, Operação, Gerente, Tipo, Placa, Modelo, Último condutor,
+ * Motor Ocioso, Km rodado, Últ. abast., Consumo, Meta, %, R$.
+ */
+
 interface PlacaStats {
   placa: string;
   categoria: string;
@@ -58,7 +69,7 @@ export function RankingKmL() {
       kmRodado: number;
       ultimoAbastecimento: Date | null;
       somaProdKmL: number;
-      somaProdMeta: number;
+      metaFixa: number;        // meta de consumo (fixa por placa/tipo, não ponderada)
       somaLitros: number;
       somaGasto: number;
     }
@@ -77,7 +88,7 @@ export function RankingKmL() {
         kmRodado: 0,
         ultimoAbastecimento: null,
         somaProdKmL: 0,
-        somaProdMeta: 0,
+        metaFixa: 0,
         somaLitros: 0,
         somaGasto: 0,
       };
@@ -87,8 +98,10 @@ export function RankingKmL() {
         e.somaProdKmL += t.mediaEfetiva * t.qtdMercadoria;
         e.somaLitros += t.qtdMercadoria;
       }
-      if (t.rendimentoMedio > 0 && t.qtdMercadoria > 0) {
-        e.somaProdMeta += t.rendimentoMedio * t.qtdMercadoria;
+      // Meta de consumo é fixa por placa/tipo — guarda a última meta válida vista
+      // (não faz média ponderada, que distorcia quando litros vinham de outro bloco).
+      if (t.rendimentoMedio > 0) {
+        e.metaFixa = t.rendimentoMedio;
       }
       if (t.dataTransacao && (!e.ultimoAbastecimento || t.dataTransacao > e.ultimoAbastecimento)) {
         e.ultimoAbastecimento = t.dataTransacao;
@@ -103,7 +116,7 @@ export function RankingKmL() {
     const stats: PlacaStats[] = [];
     for (const e of map.values()) {
       const consumo = e.somaLitros > 0 ? e.somaProdKmL / e.somaLitros : 0;
-      const meta = e.somaLitros > 0 ? e.somaProdMeta / e.somaLitros : 0;
+      const meta = e.metaFixa;
       const pctConsumo = meta > 0 ? ((consumo - meta) / meta) * 100 : 0;
       stats.push({
         placa: e.placa,
@@ -124,6 +137,7 @@ export function RankingKmL() {
     return stats;
   }, [transFiltradas, ociosoPorPlaca]);
 
+  // Top piores: ordenado por % consumo crescente (pior primeiro)
   const topPiores = useMemo(() => {
     return [...statsPorPlaca]
       .filter((s) => s.meta > 0)
@@ -134,7 +148,10 @@ export function RankingKmL() {
   if (topPiores.length === 0) {
     return (
       <div>
-        <PageHeader title="Ranking KM/L" subtitle="Top piores em consumo" />
+        <PageHeader
+          title="Ranking KM/L"
+          subtitle="Top piores em consumo"
+        />
         <Card title="Sem dados">
           <EmptyState />
         </Card>
@@ -169,6 +186,7 @@ export function RankingKmL() {
 }
 
 function TabelaPiores({ placas }: { placas: PlacaStats[] }) {
+  // Cor da % consumo: vermelho se < -10%, âmbar entre -10% e 0%, verde positivo
   const pctClass = (v: number) =>
     v >= 0 ? 'text-emerald-600 font-semibold' :
     v >= -10 ? 'text-amber-600 font-semibold' :
