@@ -19,7 +19,7 @@ const GID_CONTROLE = import.meta.env.VITE_GID_CONTROLE || '1557557647';
 // Índices (0-based) das colunas na aba Controle de Frota
 const COL_CONTROLE_PLACA = 0;    // A
 const COL_CONTROLE_GERENTE = 32; // AG
-const COL_CONTROLE_TIPO = 52;    // BA
+const COL_CONTROLE_TIPO = 22;    // W (Tipo do veículo: ONIBUS, EQUIPAMENTOS, VEICULO LEVE, etc)
 
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
