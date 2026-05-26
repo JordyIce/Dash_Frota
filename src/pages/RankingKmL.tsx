@@ -137,10 +137,12 @@ export function RankingKmL() {
     return stats;
   }, [transFiltradas, ociosoPorPlaca]);
 
-  // Top piores: ordenado por % consumo crescente (pior primeiro)
+// Top piores: ordenado por % consumo crescente (pior primeiro).
+  // Exige meta > 0 E consumo > 0 — placas sem consumo medido (motorista não digitou
+  // hodômetro → Média Efetiva = 0) não são "piores", são sem dados; ficam fora do ranking.
   const topPiores = useMemo(() => {
     return [...statsPorPlaca]
-      .filter((s) => s.meta > 0)
+      .filter((s) => s.meta > 0 && s.consumo > 0)
       .sort((a, b) => a.pctConsumo - b.pctConsumo)
       .slice(0, topN);
   }, [statsPorPlaca, topN]);
