@@ -245,10 +245,9 @@ function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy', gerenteBP =
 
   const descricaoCC = (r['Descrição'] || '').trim() || 'Sem CC';
 
-  // Gerente: usa a coluna BP (passada por posição). Fallback: coluna "Gerente" do objeto
-  // ou o centro de custo se vier "Outros"/vazio.
-  const gerenteRaw = (gerenteBP || r['Gerente'] || '').trim();
-  const gerenteFinal = gerenteRaw && gerenteRaw !== 'Outros' ? gerenteRaw : descricaoCC;
+  // Gerente: usa exatamente o valor da coluna BP, sem fallback.
+  // Os "Outros" já vêm da própria coluna; células vazias ficam vazias.
+  const gerenteFinal = (gerenteBP || '').trim();
 
   const categoriaVeiculo = (r['Para'] || '').trim() || (r['Perfil de uso'] || '').trim();
   const combustivel = (r['Tipo'] || '').trim();
