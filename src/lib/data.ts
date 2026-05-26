@@ -5,7 +5,7 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 /**
  * Painel Aderência - KPI Combustivel (Google Sheets nativo).
  * Abas:
- *   - Base veloe        (gid=101845243)  → transações Veloe (gerente vem da coluna BP)
+ *   - Base veloe        (gid=101845243)  → transações Veloe (gerente vem da última coluna "Gerente")
  *   - Base ZUQ          (gid=1442572254) → telemetria diária (motor ocioso, etc)
  *   - Motorista         (gid=1011349077) → lookup CPF→Nome canônico do motorista
  *   - Controle de Frota (gid=1557557647) → lookup placa→Tipo do veículo (coluna W)
@@ -20,9 +20,6 @@ const GID_CONTROLE = import.meta.env.VITE_GID_CONTROLE || '1557557647';
 const COL_CONTROLE_PLACA = 0;    // A
 const COL_CONTROLE_GERENTE = 32; // AG
 const COL_CONTROLE_TIPO = 22;    // W (Tipo do veículo: ONIBUS, EQUIPAMENTOS, VEICULO LEVE, etc)
-
-// Índice (0-based) da coluna de Gerente na Base veloe
-const COL_VELOE_GERENTE = 67;    // BP (a Base veloe tem 2 colunas "Gerente"; usamos a BP)
 
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
@@ -40,6 +37,12 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   if (rows.length <= SKIP) return [];
   const header = rows[SKIP].map((h) => h.trim());
 
+  // Gerente: a Base veloe tem 2 colunas chamadas "Gerente". A fonte correta é a
+  // ÚLTIMA ocorrência. Buscamos pelo nome (não por índice fixo) pra não quebrar
+  // quando adicionarem/removerem colunas no meio da planilha.
+  const idxGerente = header.lastIndexOf('Gerente');
+  console.log(`[Veloe] Coluna "Gerente" no índice ${idxGerente}`);
+
   // Detecta formato de data analisando o conjunto
   const idxData = (() => {
     const i = header.indexOf('Data');
@@ -56,13 +59,15 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   const out: Transacao[] = [];
   for (let r = SKIP + 1; r < rows.length; r++) {
     const row = rows[r];
+    // pula linhas totalmente vazias
     if (row.every((c) => c === '')) continue;
+    // monta objeto por nome de coluna
     const obj: Record<string, string> = {};
     for (let c = 0; c < header.length; c++) {
       obj[header[c]] = (row[c] ?? '').trim();
     }
-    // gerente vem da coluna BP (índice 67) lida por POSIÇÃO, porque há 2 colunas "Gerente"
-    const gerenteBP = (row[COL_VELOE_GERENTE] || '').trim();
+    // gerente da última coluna "Gerente" (índice encontrado pelo nome do header)
+    const gerenteBP = idxGerente >= 0 ? (row[idxGerente] || '').trim() : '';
     const t = normalizeVeloeRow(obj as VeloeRow, fmtData, gerenteBP);
     if (t.placa) out.push(t);
   }
@@ -201,7 +206,7 @@ export async function fetchAll(): Promise<{
   const { gerentePorPlaca, tipoPorPlaca } = controleFrota;
 
   // Aplica Controle de Frota na ZUQ pro TIPO (grupo). O gerente da ZUQ é mantido
-  // (Motor Ocioso não tem como cruzar com a BP da Veloe, são bases distintas).
+  // (Motor Ocioso não tem como cruzar com a coluna Gerente da Veloe, são bases distintas).
   const ocioso = ociosoResult.map((o) => {
     const placaUC = (o.placa || '').toUpperCase().replace(/\s/g, '');
     const tipoFinal = tipoPorPlaca.get(placaUC) || o.grupo;
@@ -227,7 +232,7 @@ export async function fetchAll(): Promise<{
 
     return {
       ...t,
-      // GERENTE: vem da coluna BP da Base veloe (já resolvido em t.gerente).
+      // GERENTE: vem da última coluna "Gerente" da Base veloe (já resolvido em t.gerente).
       gerente: t.gerente,
       categoriaVeiculo: tipoFinal ? titleCase(tipoFinal) : tipoFinal,
       motorista: nomeCanonico || t.motorista,
@@ -245,8 +250,8 @@ function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy', gerenteBP =
 
   const descricaoCC = (r['Descrição'] || '').trim() || 'Sem CC';
 
-  // Gerente: usa exatamente o valor da coluna BP, sem fallback.
-  // Os "Outros" já vêm da própria coluna; células vazias ficam vazias.
+  // Gerente: usa exatamente o valor da última coluna "Gerente" (passada por posição),
+  // sem fallback. Os "Outros" já vêm da própria coluna; células vazias ficam vazias.
   const gerenteFinal = (gerenteBP || '').trim();
 
   const categoriaVeiculo = (r['Para'] || '').trim() || (r['Perfil de uso'] || '').trim();
