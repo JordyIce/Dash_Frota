@@ -5,10 +5,10 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 /**
  * Painel Aderência - KPI Combustivel (Google Sheets nativo).
  * Abas:
- *   - Base veloe        (gid=101845243)  → transações Veloe
+ *   - Base veloe        (gid=101845243)  → transações Veloe (gerente vem da coluna BP)
  *   - Base ZUQ          (gid=1442572254) → telemetria diária (motor ocioso, etc)
  *   - Motorista         (gid=1011349077) → lookup CPF→Nome canônico do motorista
- *   - Controle de Frota (gid=1557557647) → lookup placa→Gerente (col AG) e Tipo (col W)
+ *   - Controle de Frota (gid=1557557647) → lookup placa→Tipo do veículo (coluna W)
  */
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
 const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
@@ -21,6 +21,9 @@ const COL_CONTROLE_PLACA = 0;    // A
 const COL_CONTROLE_GERENTE = 32; // AG
 const COL_CONTROLE_TIPO = 22;    // W (Tipo do veículo: ONIBUS, EQUIPAMENTOS, VEICULO LEVE, etc)
 
+// Índice (0-based) da coluna de Gerente na Base veloe
+const COL_VELOE_GERENTE = 67;    // BP (a Base veloe tem 2 colunas "Gerente"; usamos a BP)
+
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
 }
@@ -31,11 +34,39 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   if (!res.ok) throw new Error(`Falha na Base veloe: HTTP ${res.status}`);
   const text = await res.text();
   const rows = parseCsv(text);
-  const raw = csvToObjects<VeloeRow>(rows, { skipRows: 1 });
-  const amostras = raw.map((r) => r['Data'] || r['Data/ Hora'] || '').filter(Boolean);
+
+  // Header está na linha de índice 1 (skipRows: 1). Dados começam no índice 2.
+  const SKIP = 1;
+  if (rows.length <= SKIP) return [];
+  const header = rows[SKIP].map((h) => h.trim());
+
+  // Detecta formato de data analisando o conjunto
+  const idxData = (() => {
+    const i = header.indexOf('Data');
+    return i >= 0 ? i : header.indexOf('Data/ Hora');
+  })();
+  const amostras: string[] = [];
+  for (let r = SKIP + 1; r < rows.length; r++) {
+    const v = idxData >= 0 ? (rows[r][idxData] || '') : '';
+    if (v) amostras.push(v);
+  }
   const fmtData = detectDateFormat(amostras);
   console.log(`[Veloe] Formato de data detectado: ${fmtData.toUpperCase()}`);
-  return raw.map((r) => normalizeVeloeRow(r, fmtData)).filter((t) => t.placa);
+
+  const out: Transacao[] = [];
+  for (let r = SKIP + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.every((c) => c === '')) continue;
+    const obj: Record<string, string> = {};
+    for (let c = 0; c < header.length; c++) {
+      obj[header[c]] = (row[c] ?? '').trim();
+    }
+    // gerente vem da coluna BP (índice 67) lida por POSIÇÃO, porque há 2 colunas "Gerente"
+    const gerenteBP = (row[COL_VELOE_GERENTE] || '').trim();
+    const t = normalizeVeloeRow(obj as VeloeRow, fmtData, gerenteBP);
+    if (t.placa) out.push(t);
+  }
+  return out;
 }
 
 export async function fetchOciosoData(): Promise<OciosoDia[]> {
@@ -94,8 +125,8 @@ function titleCase(s: string): string {
 
 /**
  * Lê a aba "Controle de Frota" (gid=1557557647).
- * Cruza por placa pra obter Gerente (coluna AG / índice 32) e Tipo de Veículo (coluna W / índice 22).
- * Lê por POSIÇÃO (índice) porque a aba tem várias colunas chamadas "Tipo" (nome não é confiável).
+ * Cruza por placa pra obter o Tipo de Veículo (coluna W / índice 22).
+ * Lê por POSIÇÃO (índice) porque a aba tem várias colunas chamadas "Tipo".
  */
 export async function fetchControleFrota(): Promise<{
   gerentePorPlaca: Map<string, string>;
@@ -112,7 +143,6 @@ export async function fetchControleFrota(): Promise<{
     }
     const text = await res.text();
     const rows = parseCsv(text);
-    // Linha 1 é header — começa da linha 2 (índice 1)
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const placa = (row[COL_CONTROLE_PLACA] || '').toUpperCase().replace(/\s/g, '').trim();
@@ -120,7 +150,6 @@ export async function fetchControleFrota(): Promise<{
       const gerente = (row[COL_CONTROLE_GERENTE] || '').trim();
       const tipo = (row[COL_CONTROLE_TIPO] || '').trim();
       if (gerente) gerentePorPlaca.set(placa, gerente);
-      // Normaliza o tipo pra Title Case, unificando "PICK-UP LEVE"/"Pick-Up Leve"/etc
       if (tipo) tipoPorPlaca.set(placa, titleCase(tipo));
     }
     console.log(`[Controle de Frota] ${gerentePorPlaca.size} placas com gerente, ${tipoPorPlaca.size} com tipo.`);
@@ -152,7 +181,7 @@ export async function fetchAll(): Promise<{
     }),
   ]);
 
-  // Lookups placa→gerente e placa→grupo a partir da ZUQ (mantidos pro Motor Ocioso e como fallback)
+  // Lookups placa→gerente e placa→grupo a partir da ZUQ (mantidos pro Motor Ocioso e fallback)
   const placasGerente = new Map<string, string>();
   const placasGrupo = new Map<string, string>();
   const ultimaDataPorPlaca = new Map<string, number>();
@@ -171,7 +200,8 @@ export async function fetchAll(): Promise<{
 
   const { gerentePorPlaca, tipoPorPlaca } = controleFrota;
 
-  // Aplica Controle de Frota também na ZUQ (pra página Motor Ocioso ter gerente/tipo consistentes)
+  // Aplica Controle de Frota na ZUQ pro TIPO (grupo). O gerente da ZUQ é mantido
+  // (Motor Ocioso não tem como cruzar com a BP da Veloe, são bases distintas).
   const ocioso = ociosoResult.map((o) => {
     const placaUC = (o.placa || '').toUpperCase().replace(/\s/g, '');
     const tipoFinal = tipoPorPlaca.get(placaUC) || o.grupo;
@@ -186,23 +216,19 @@ export async function fetchAll(): Promise<{
     // Placa normalizada (UPPERCASE, sem espaços) pra cruzar com Controle de Frota
     const placaUC = (t.placa || '').toUpperCase().replace(/\s/g, '');
 
-    // GERENTE e TIPO: fonte primária = Controle de Frota (por placa).
-    // Fallback 1 = ZUQ. Fallback 2 = o que veio na Veloe.
-    const gerenteControle = gerentePorPlaca.get(placaUC);
+    // TIPO: fonte primária = Controle de Frota (coluna W). Fallback = ZUQ → Veloe.
     const tipoControle = tipoPorPlaca.get(placaUC);
-    const gerenteZuq = placasGerente.get(placaUC);
     const grupoZuq = placasGrupo.get(placaUC);
+    const tipoFinal = tipoControle || grupoZuq || t.categoriaVeiculo;
 
     // MOTORISTA: cruza pelo CPF na aba Motorista; fallback = nome da Veloe.
     const cpfNormalizado = (t.cpfMotorista || '').replace(/\D/g, '');
     const nomeCanonico = cpfNormalizado ? motoristasMap.get(cpfNormalizado) : undefined;
 
-    // Tipo final, sempre normalizado pra Title Case (unifica grafias de fontes diferentes)
-    const tipoFinal = tipoControle || grupoZuq || t.categoriaVeiculo;
-
     return {
       ...t,
-      gerente: gerenteControle || gerenteZuq || t.gerente,
+      // GERENTE: vem da coluna BP da Base veloe (já resolvido em t.gerente).
+      gerente: t.gerente,
       categoriaVeiculo: tipoFinal ? titleCase(tipoFinal) : tipoFinal,
       motorista: nomeCanonico || t.motorista,
     };
@@ -211,16 +237,17 @@ export async function fetchAll(): Promise<{
   return { veloe, ocioso, placasGerente, placasGrupo };
 }
 
-function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy'): Transacao {
+function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy', gerenteBP = ''): Transacao {
   // Ignora coluna de horário (Hora/Horas) — não usamos pra nada nas análises,
   // e algumas linhas vêm com valores corrompidos que quebram o parseDate.
-  // Pega só a data (suporta ambos cabeçalhos: "Data" novo ou "Data/ Hora" antigo).
   const dataStr = (r['Data'] || r['Data/ Hora'] || '').trim();
   const dataHoraCombinada = dataStr;
 
   const descricaoCC = (r['Descrição'] || '').trim() || 'Sem CC';
 
-  const gerenteRaw = (r['Gerente'] || '').trim();
+  // Gerente: usa a coluna BP (passada por posição). Fallback: coluna "Gerente" do objeto
+  // ou o centro de custo se vier "Outros"/vazio.
+  const gerenteRaw = (gerenteBP || r['Gerente'] || '').trim();
   const gerenteFinal = gerenteRaw && gerenteRaw !== 'Outros' ? gerenteRaw : descricaoCC;
 
   const categoriaVeiculo = (r['Para'] || '').trim() || (r['Perfil de uso'] || '').trim();
