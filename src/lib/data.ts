@@ -5,10 +5,10 @@ import type { OciosoDia, OciosoRow, Transacao, VeloeRow } from './types';
 /**
  * Painel Aderência - KPI Combustivel (Google Sheets nativo).
  * Abas:
- *   - Base veloe        (gid=101845243)  → transações Veloe (gerente vem da última coluna "Gerente")
+ *   - Base veloe        (gid=101845243)  → transações Veloe (gerente e meta lidos por nome)
  *   - Base ZUQ          (gid=1442572254) → telemetria diária (motor ocioso, etc)
  *   - Motorista         (gid=1011349077) → lookup CPF→Nome canônico do motorista
- *   - Controle de Frota (gid=1557557647) → lookup placa→Tipo do veículo (coluna W)
+ *   - Controle de Frota (gid=1557557647) → lookup placa→Tipo (col W) e Modelo (col I)
  */
 const SHEET_ID = import.meta.env.VITE_SHEET_ID || '1va-mFQ0FjccgKqunvzEWuLAv4llMNkP8PzJo14ir9mk';
 const GID_VELOE = import.meta.env.VITE_GID_VELOE || '101845243';
@@ -18,8 +18,9 @@ const GID_CONTROLE = import.meta.env.VITE_GID_CONTROLE || '1557557647';
 
 // Índices (0-based) das colunas na aba Controle de Frota
 const COL_CONTROLE_PLACA = 0;    // A
-const COL_CONTROLE_GERENTE = 32; // AG
 const COL_CONTROLE_TIPO = 22;    // W (Tipo do veículo: ONIBUS, EQUIPAMENTOS, VEICULO LEVE, etc)
+const COL_CONTROLE_GERENTE = 32; // AG
+const COL_CONTROLE_MODELO = 8;   // I (Modelo: ONIBUS - VW/MASCA, COMPRESSOR, MOTOSSERRA, etc)
 
 export function getSheetCsvUrl(sheetId: string, gid: string | number): string {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
@@ -42,6 +43,11 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
   // quando adicionarem/removerem colunas no meio da planilha.
   const idxGerente = header.lastIndexOf('Gerente');
   console.log(`[Veloe] Coluna "Gerente" no índice ${idxGerente}`);
+
+  // Meta de consumo: coluna BR ("Meta consumo"). Pode haver mais de uma com esse nome;
+  // usamos a ÚLTIMA ocorrência. Lida por nome pra não quebrar com mudança de colunas.
+  const idxMeta = header.lastIndexOf('Meta consumo');
+  console.log(`[Veloe] Coluna "Meta consumo" no índice ${idxMeta}`);
 
   // Detecta formato de data analisando o conjunto
   const idxData = (() => {
@@ -68,7 +74,9 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
     }
     // gerente da última coluna "Gerente" (índice encontrado pelo nome do header)
     const gerenteBP = idxGerente >= 0 ? (row[idxGerente] || '').trim() : '';
-    const t = normalizeVeloeRow(obj as VeloeRow, fmtData, gerenteBP);
+    // meta consumo da última coluna "Meta consumo" (coluna BR)
+    const metaBR = idxMeta >= 0 ? (row[idxMeta] || '').trim() : '';
+    const t = normalizeVeloeRow(obj as VeloeRow, fmtData, gerenteBP, metaBR);
     if (t.placa) out.push(t);
   }
   return out;
@@ -130,38 +138,44 @@ function titleCase(s: string): string {
 
 /**
  * Lê a aba "Controle de Frota" (gid=1557557647).
- * Cruza por placa pra obter o Tipo de Veículo (coluna W / índice 22).
+ * Cruza por placa pra obter Tipo (col W / índice 22) e Modelo (col I / índice 8).
  * Lê por POSIÇÃO (índice) porque a aba tem várias colunas chamadas "Tipo".
  */
 export async function fetchControleFrota(): Promise<{
   gerentePorPlaca: Map<string, string>;
   tipoPorPlaca: Map<string, string>;
+  modeloPorPlaca: Map<string, string>;
 }> {
   const url = getSheetCsvUrl(SHEET_ID, GID_CONTROLE);
   const gerentePorPlaca = new Map<string, string>();
   const tipoPorPlaca = new Map<string, string>();
+  const modeloPorPlaca = new Map<string, string>();
   try {
     const res = await fetch(url, { redirect: 'follow' });
     if (!res.ok) {
       console.warn(`Controle de Frota indisponível: HTTP ${res.status}`);
-      return { gerentePorPlaca, tipoPorPlaca };
+      return { gerentePorPlaca, tipoPorPlaca, modeloPorPlaca };
     }
     const text = await res.text();
     const rows = parseCsv(text);
+    // Linha 1 é header — começa da linha 2 (índice 1)
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const placa = (row[COL_CONTROLE_PLACA] || '').toUpperCase().replace(/\s/g, '').trim();
       if (!placa) continue;
       const gerente = (row[COL_CONTROLE_GERENTE] || '').trim();
       const tipo = (row[COL_CONTROLE_TIPO] || '').trim();
+      const modelo = (row[COL_CONTROLE_MODELO] || '').trim();
       if (gerente) gerentePorPlaca.set(placa, gerente);
+      // Normaliza o tipo pra Title Case, unificando "PICK-UP LEVE"/"Pick-Up Leve"/etc
       if (tipo) tipoPorPlaca.set(placa, titleCase(tipo));
+      if (modelo) modeloPorPlaca.set(placa, modelo);
     }
-    console.log(`[Controle de Frota] ${gerentePorPlaca.size} placas com gerente, ${tipoPorPlaca.size} com tipo.`);
+    console.log(`[Controle de Frota] ${gerentePorPlaca.size} placas com gerente, ${tipoPorPlaca.size} com tipo, ${modeloPorPlaca.size} com modelo.`);
   } catch (e) {
     console.warn('Erro ao buscar Controle de Frota:', e);
   }
-  return { gerentePorPlaca, tipoPorPlaca };
+  return { gerentePorPlaca, tipoPorPlaca, modeloPorPlaca };
 }
 
 export async function fetchAll(): Promise<{
@@ -182,7 +196,11 @@ export async function fetchAll(): Promise<{
     }),
     fetchControleFrota().catch((e) => {
       console.warn('Controle de Frota indisponível:', e);
-      return { gerentePorPlaca: new Map<string, string>(), tipoPorPlaca: new Map<string, string>() };
+      return {
+        gerentePorPlaca: new Map<string, string>(),
+        tipoPorPlaca: new Map<string, string>(),
+        modeloPorPlaca: new Map<string, string>(),
+      };
     }),
   ]);
 
@@ -203,7 +221,7 @@ export async function fetchAll(): Promise<{
     }
   }
 
-  const { gerentePorPlaca, tipoPorPlaca } = controleFrota;
+  const { gerentePorPlaca, tipoPorPlaca, modeloPorPlaca } = controleFrota;
 
   // Aplica Controle de Frota na ZUQ pro TIPO (grupo). O gerente da ZUQ é mantido
   // (Motor Ocioso não tem como cruzar com a coluna Gerente da Veloe, são bases distintas).
@@ -230,19 +248,23 @@ export async function fetchAll(): Promise<{
     const cpfNormalizado = (t.cpfMotorista || '').replace(/\D/g, '');
     const nomeCanonico = cpfNormalizado ? motoristasMap.get(cpfNormalizado) : undefined;
 
+    // MODELO: fonte primária = Controle de Frota (coluna I). Fallback = Modelo da Veloe.
+    const modeloControle = modeloPorPlaca.get(placaUC);
+
     return {
       ...t,
       // GERENTE: vem da última coluna "Gerente" da Base veloe (já resolvido em t.gerente).
       gerente: t.gerente,
       categoriaVeiculo: tipoFinal ? titleCase(tipoFinal) : tipoFinal,
       motorista: nomeCanonico || t.motorista,
+      modelo: modeloControle || t.modelo,
     };
   });
 
   return { veloe, ocioso, placasGerente, placasGrupo };
 }
 
-function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy', gerenteBP = ''): Transacao {
+function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy', gerenteBP = '', metaBR = ''): Transacao {
   // Ignora coluna de horário (Hora/Horas) — não usamos pra nada nas análises,
   // e algumas linhas vêm com valores corrompidos que quebram o parseDate.
   const dataStr = (r['Data'] || r['Data/ Hora'] || '').trim();
@@ -297,7 +319,7 @@ function normalizeVeloeRow(r: VeloeRow, fmtData: DateFormat = 'mdy', gerenteBP =
 
     hodometroAnterior: parseNumber(r['Hodômetro Anterior - Dig. Motorista']),
     hodometroTransacao: parseNumber(r['Hodômetro Transação - Dig. Motorista']),
-    rendimentoMedio: parseNumber(r['Rendimento Médio']) || parseNumber(r['Meta consumo']),
+    rendimentoMedio: parseNumber(metaBR) || parseNumber(r['Rendimento Médio']) || parseNumber(r['Meta consumo']),
     kmHrPercorrido: parseNumber(r['Km/Hr Percorrido']),
     mediaEfetiva: parseNumber(r['Média Efetiva (Km/Hr)']),
     tolerancia: parseNumber(r['Tolerância Rendimento Veículo (%)']),
