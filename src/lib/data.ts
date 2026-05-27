@@ -77,7 +77,8 @@ export async function fetchVeloeData(): Promise<Transacao[]> {
     // meta consumo da última coluna "Meta consumo" (coluna BR)
     const metaBR = idxMeta >= 0 ? (row[idxMeta] || '').trim() : '';
     const t = normalizeVeloeRow(obj as VeloeRow, fmtData, gerenteBP, metaBR);
-    if (t.placa) out.push(t);
+    // Ignora placas marcadas com "*" — a frota indicou que são irrelevantes.
+    if (t.placa && !t.placa.includes('*')) out.push(t);
   }
   return out;
 }
